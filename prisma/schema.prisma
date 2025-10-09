@@ -10,6 +10,9 @@ datasource db {
 model Nama {
   id          Int      @id @default(autoincrement())
   namaLengkap String   @db.VarChar(100)
+  Alamat      String   @db.VarChar(100)
+  Namapanjang String   @db.VarChar(100)
+
   createdAt   DateTime @default(now())
 }
 

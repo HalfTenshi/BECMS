@@ -7,12 +7,396 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Nama {
-  id          Int      @id @default(autoincrement())
-  namaLengkap String   @db.VarChar(100)
-  Alamat      String   @db.VarChar(100)
-  Namapanjang String   @db.VarChar(100)
-
-  createdAt   DateTime @default(now())
+/// =======================
+/// Enums
+/// =======================
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
 }
 
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum FieldType {
+  TEXT
+  RICH_TEXT
+  NUMBER
+  BOOLEAN
+  DATE
+  JSON
+  SLUG
+  RELATION
+}
+
+enum RelationKind {
+  ONE_TO_ONE
+  ONE_TO_MANY
+  MANY_TO_ONE
+  MANY_TO_MANY
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum PermissionAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  PUBLISH
+}
+
+enum ModuleKey {
+  AUTH
+  USERS
+  ROLES
+  CONTENT_MODELS
+  CONTENT_ENTRIES
+  CONTENT_RELATIONS
+  CONTENT_SEO
+  SUBSCRIPTION
+  BILLING
+  PRODUCT
+  BRAND
+}
+
+/// =======================
+/// Multi-tenant boundary
+/// =======================
+model Workspace {
+  id           String      @id @default(cuid())
+  name         String
+  slug         String      @unique
+  ownerId      String
+  owner        User        @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
+  planId       String?
+  plan         Plan?       @relation(fields: [planId], references: [id])
+  members      WorkspaceMember[]
+  roles        Role[]
+  permissions  Permission[]
+  contentTypes ContentType[]
+  entries      ContentEntry[]
+  products     Product[]
+  brands       Brand[]
+  contentRelations ContentRelation[]
+  productCategories ProductCategory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  roleId      String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role?     @relation(fields: [roleId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+/// =======================
+/// Auth & Users
+/// =======================
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  passwordHash   String?
+  name           String
+  pictureUrl     String?
+  status         AccountStatus   @default(ACTIVE)
+  accounts       Account[]
+  sessions       Session[]
+  workspaces     WorkspaceMember[]
+  workspacesOwned Workspace[]    @relation("UserOwnsWorkspaces")
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  createdEntries ContentEntry[]  @relation("EntryCreatedBy")
+  updatedEntries ContentEntry[]  @relation("EntryUpdatedBy")
+}
+
+model Account {
+  id           String       @id @default(cuid())
+  provider     AuthProvider
+  providerId   String
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+
+  @@unique([provider, providerId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+/// =======================
+/// RBAC (Roles & Permissions)
+/// =======================
+model Role {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  name         String
+  description  String?
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rolePerms    RolePermission[]
+  members      WorkspaceMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+model Permission {
+  id          String          @id @default(cuid())
+  workspaceId String
+  module      ModuleKey
+  action      PermissionAction
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rolePerms   RolePermission[]
+
+  @@unique([workspaceId, module, action])
+}
+
+model RolePermission {
+  id            String      @id @default(cuid())
+  roleId        String
+  permissionId  String
+  role          Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+/// =======================
+/// Content Model Builder
+/// =======================
+model ContentType {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  name          String
+  apiKey        String
+  description   String?
+  visibility    Visibility    @default(PRIVATE)
+  fields        ContentField[]
+  entries       ContentEntry[]
+  targetedByConfigs RelationConfig[] @relation("TargetCT")
+  seoEnabled    Boolean       @default(true)
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([workspaceId, apiKey])
+  @@unique([workspaceId, name])
+}
+
+model ContentField {
+  id             String        @id @default(cuid())
+  contentTypeId  String
+  name           String
+  apiKey         String
+  type           FieldType
+  isRequired     Boolean       @default(false)
+  isUnique       Boolean       @default(false)
+  position       Int           @default(0)
+  minLength      Int?
+  maxLength      Int?
+  minNumber      Float?
+  maxNumber      Float?
+  slugFrom       String?
+  relation       RelationConfig?
+
+  contentType ContentType @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+  values      FieldValue[]  @relation("FieldToValues")
+  relations   ContentRelation[] @relation("FieldToRelations")
+
+  @@unique([contentTypeId, apiKey])
+}
+
+model RelationConfig {
+  id                   String        @id @default(cuid())
+  fieldId              String        @unique
+  kind                 RelationKind
+  targetContentTypeId  String
+
+  field             ContentField  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  targetContentType ContentType   @relation("TargetCT", fields: [targetContentTypeId], references: [id])
+}
+
+/// =======================
+/// Content Entries + Values + Relations
+/// =======================
+model ContentEntry {
+  id            String        @id @default(cuid())
+  workspaceId   String
+  contentTypeId String
+
+  slug             String?       @unique
+  seoTitle         String?
+  metaDescription  String?
+  keywords         String[]      @default([])
+  isPublished      Boolean       @default(false)
+  publishedAt      DateTime?
+
+  createdById   String?
+  updatedById   String?
+  createdBy     User?        @relation("EntryCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?        @relation("EntryUpdatedBy", fields: [updatedById], references: [id])
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentType   ContentType  @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+
+  values        FieldValue[]
+  outgoingRels  ContentRelation[] @relation("FromEntry")
+  incomingRels  ContentRelation[] @relation("ToEntry")
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workspaceId, contentTypeId])
+  @@index([isPublished, publishedAt])
+}
+
+model FieldValue {
+  id            String       @id @default(cuid())
+  entryId       String
+  fieldId       String
+  valueString   String?
+  valueNumber   Float?
+  valueBoolean  Boolean?
+  valueDate     DateTime?
+  valueJson     Json?
+
+  entry ContentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  field ContentField @relation("FieldToValues", fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, fieldId])
+  @@index([fieldId])
+  @@index([valueString])
+  @@index([valueNumber])
+  @@index([valueBoolean])
+  @@index([valueDate])
+}
+
+model ContentRelation {
+  id          String       @id @default(cuid())
+  workspaceId String
+  fieldId     String
+  fromEntryId String
+  toEntryId   String
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  field     ContentField @relation("FieldToRelations", fields: [fieldId], references: [id], onDelete: Cascade)
+  from      ContentEntry @relation("FromEntry", fields: [fromEntryId], references: [id], onDelete: Cascade)
+  to        ContentEntry @relation("ToEntry", fields: [toEntryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([fieldId, fromEntryId, toEntryId])
+  @@index([fromEntryId])
+  @@index([toEntryId])
+}
+
+/// =======================
+/// Subscriptions (SaaS)
+/// =======================
+model Plan {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  monthlyPrice Int      @default(0)
+  yearlyPrice  Int      @default(0)
+  maxMembers       Int?
+  maxContentTypes  Int?
+  maxEntries       Int?
+
+  workspaces Workspace[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// =======================
+/// Example: Product / Brand
+/// =======================
+model Brand {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String    @unique
+  description String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products  Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+}
+
+model ProductCategory {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String    @unique
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@unique([workspaceId, name])
+}
+
+model Product {
+  id            String           @id @default(cuid())
+  workspaceId   String
+  name          String
+  slug          String           @unique
+  price         Int              @default(0)
+  sku           String?          @unique
+  description   String?
+  brandId       String?
+  categoryId    String?
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand?          @relation(fields: [brandId], references: [id])
+  category  ProductCategory?@relation(fields: [categoryId], references: [id])
+
+  seoTitle        String?
+  metaDescription String?
+  keywords        String[]      @default([])
+
+  isPublished  Boolean  @default(false)
+  publishedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([brandId])
+  @@index([categoryId])
+}

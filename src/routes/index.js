@@ -4,6 +4,8 @@ import express from "express";
 import contentRoutes from "./content.routes.js";
 // import roleRoutes from "./role.routes.js";
 import planRoutes from "./plan.routes.js";
+import brandRoutes from "./brand.routes.js";
+import productRoutes from "./product.routes.js";
 
 const router = express.Router();
 
@@ -12,5 +14,7 @@ const router = express.Router();
 router.use("/content", contentRoutes);
 // router.use("/roles", roleRoutes);
 router.use("/plans", planRoutes);
+router.use("/brands", brandRoutes);
+router.use("/products", productRoutes);
 
 export default router;

@@ -1,22 +1,51 @@
 import express from "express";
-// import userRoutes from "./user.routes.js";
+
+// Core/auth
+import authRoutes from "./auth.routes.js";
+import userRoutes from "./user.routes.js";
 import workspaceRoutes from "./workspace.routes.js";
-import contentRoutes from "./content.routes.js";
 import roleRoutes from "./role.routes.js";
+import permissionRoutes from "./permission.routes.js";
+
+// Business modules
 import planRoutes from "./plan.routes.js";
 import brandRoutes from "./brand.routes.js";
 import productRoutes from "./product.routes.js";
-import permissionRoutes from "./permission.routes.js";
+import contentRoutes from "./content.routes.js";
+
+// Admin (protected per-file)
+import contentAdminRoutes from "./admin/content.admin.routes.js";
+import brandAdminRoutes from "./admin/brand.admin.routes.js";
+import productAdminRoutes from "./admin/product.admin.routes.js";
+import planAdminRoutes from "./admin/plan.admin.routes.js";
+
+// Public (no auth)
+import contentPublicRoutes from "./public/content.public.routes.js";
 
 const router = express.Router();
 
-// router.use("/users", userRoutes);
+// --- Auth dulu ---
+router.use("/auth", authRoutes);
+
+// --- Core ---
+router.use("/users", userRoutes);
 router.use("/workspaces", workspaceRoutes);
-router.use("/content", contentRoutes);
 router.use("/roles", roleRoutes);
+router.use("/permissions", permissionRoutes);
+
+// --- Business modules ---
 router.use("/plans", planRoutes);
 router.use("/brands", brandRoutes);
 router.use("/products", productRoutes);
-router.use("/permissions", permissionRoutes);
-export default router;
+router.use("/content", contentRoutes);
 
+// --- Admin (prefix /admin/...) ---
+router.use("/admin/content", contentAdminRoutes);
+router.use("/admin/brands", brandAdminRoutes);
+router.use("/admin/products", productAdminRoutes);
+router.use("/admin/plans", planAdminRoutes);
+
+// --- Public (no auth) ---
+router.use("/public/content", contentPublicRoutes);
+
+export default router;

@@ -1,52 +1,57 @@
 import userService from "./user.service.js";
 
 class UserController {
-  async getAllUsers(req, res) {
+  async getAll(req, res) {
     try {
-      const users = await userService.getAllUsers();
-      res.json(users);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      const data = await userService.list(req.query);
+      res.json(data);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
     }
   }
 
-  async getUserById(req, res) {
+  async getById(req, res) {
     try {
-      const { id } = req.params;
-      const user = await userService.getUserById(id);
-      if (!user) return res.status(404).json({ message: "User not found" });
-      res.json(user);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      const data = await userService.get(req.params.id);
+      res.json(data);
+    } catch (e) {
+      res.status(404).json({ error: e.message });
     }
   }
 
-  async createUser(req, res) {
+  async create(req, res) {
     try {
-      const newUser = await userService.createUser(req.body);
-      res.status(201).json(newUser);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const data = await userService.create(req.body);
+      res.status(201).json(data);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
     }
   }
 
-  async updateUser(req, res) {
+  async update(req, res) {
     try {
-      const { id } = req.params;
-      const updatedUser = await userService.updateUser(id, req.body);
-      res.json(updatedUser);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const data = await userService.update(req.params.id, req.body);
+      res.json(data);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
     }
   }
 
-  async deleteUser(req, res) {
+  async updateStatus(req, res) {
     try {
-      const { id } = req.params;
-      await userService.deleteUser(id);
-      res.json({ message: "User deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      const data = await userService.updateStatus(req.params.id, req.body.status);
+      res.json(data);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  }
+
+  async delete(req, res) {
+    try {
+      const data = await userService.remove(req.params.id);
+      res.json(data);
+    } catch (e) {
+      res.status(404).json({ error: e.message });
     }
   }
 }

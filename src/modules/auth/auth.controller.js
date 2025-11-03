@@ -45,6 +45,18 @@ class AuthController {
       res.status(400).json({ error: e.message });
     }
   }
+   // === NEW ===
+  async googleOneTap(req, res) {
+    try {
+      const { idToken } = req.body; // FE kirim credential dari Google
+      if (!idToken) return res.status(400).json({ error: "idToken is required" });
+
+      const data = await authService.loginWithGoogleIdToken(idToken);
+      return res.json(data);
+    } catch (e) {
+      return res.status(401).json({ error: e.message || "Google login failed" });
+    }
+  }
 }
 
 export default new AuthController();

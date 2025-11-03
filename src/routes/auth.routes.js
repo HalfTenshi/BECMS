@@ -13,4 +13,8 @@ router.post("/reset-password", authController.resetPassword);
 
 // (opsional) logout stateless cukup di FE hapus token
 
+// === NEW: One-Tap / Sign-In with Google (FE mengirimkan ID token) ===
+router.post("/google/one-tap", authController.googleOneTap);
+
+
 export default router;

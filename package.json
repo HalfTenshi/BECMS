@@ -15,8 +15,10 @@
     "@prisma/client": "^6.17.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "google-auth-library": "^10.5.0",
+    "googleapis": "^164.1.0",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.16.2"
   },

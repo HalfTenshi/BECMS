@@ -12,6 +12,7 @@ import planRoutes from "./plan.routes.js";
 import brandRoutes from "./brand.routes.js";
 import productRoutes from "./product.routes.js";
 import contentRoutes from "./content.routes.js";
+import contentFieldRoutes from "./contentField.routes.js";
 
 // Admin (protected per-file)
 import contentAdminRoutes from "./admin/content.admin.routes.js";
@@ -21,6 +22,8 @@ import planAdminRoutes from "./admin/plan.admin.routes.js";
 
 // Public (no auth)
 import contentPublicRoutes from "./public/content.public.routes.js";
+import docsRoutes from "./docs.routes.js"; 
+import uploadRoutes from "./upload.routes.js";
 
 const router = express.Router();
 
@@ -38,6 +41,7 @@ router.use("/plans", planRoutes);
 router.use("/brands", brandRoutes);
 router.use("/products", productRoutes);
 router.use("/content", contentRoutes);
+router.use("/content/types/:contentTypeId/fields", contentFieldRoutes);
 
 // --- Admin (prefix /admin/...) ---
 router.use("/admin/content", contentAdminRoutes);
@@ -47,5 +51,6 @@ router.use("/admin/plans", planAdminRoutes);
 
 // --- Public (no auth) ---
 router.use("/public/content", contentPublicRoutes);
-
+router.use("/docs", docsRoutes);
+router.use("/uploads", uploadRoutes);
 export default router;

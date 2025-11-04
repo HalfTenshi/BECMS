@@ -30,6 +30,7 @@ enum FieldType {
   JSON
   SLUG
   RELATION
+  MEDIA       // ⬅️ baru
 }
 
 enum RelationKind {
@@ -70,25 +71,25 @@ enum ModuleKey {
 /// Multi-tenant boundary
 /// =======================
 model Workspace {
-  id           String      @id @default(cuid())
-  name         String
-  slug         String      @unique
-  ownerId      String
-  owner        User        @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
-  planId       String?
-  plan         Plan?       @relation(fields: [planId], references: [id])
-  members      WorkspaceMember[]
-  roles        Role[]
-  permissions  Permission[]
-  contentTypes ContentType[]
-  entries      ContentEntry[]
-  products     Product[]
-  brands       Brand[]
-  contentRelations ContentRelation[]
-  productCategories ProductCategory[]
+  id                 String            @id @default(cuid())
+  name               String
+  slug               String            @unique
+  ownerId            String
+  owner              User              @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
+  planId             String?
+  plan               Plan?             @relation(fields: [planId], references: [id])
+  members            WorkspaceMember[]
+  roles              Role[]
+  permissions        Permission[]
+  contentTypes       ContentType[]
+  entries            ContentEntry[]
+  products           Product[]
+  brands             Brand[]
+  contentRelations   ContentRelation[]
+  productCategories  ProductCategory[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([slug])
 }
@@ -112,22 +113,22 @@ model WorkspaceMember {
 /// Auth & Users
 /// =======================
 model User {
-  id             String          @id @default(cuid())
-  email          String          @unique
-  passwordHash   String?
-  name           String
-  pictureUrl     String?
-  status         AccountStatus   @default(ACTIVE)
-  accounts       Account[]
-  sessions       Session[]
-  workspaces     WorkspaceMember[]
-  workspacesOwned Workspace[]    @relation("UserOwnsWorkspaces")
+  id               String          @id @default(cuid())
+  email            String          @unique
+  passwordHash     String?
+  name             String
+  pictureUrl       String?
+  status           AccountStatus   @default(ACTIVE)
+  accounts         Account[]
+  sessions         Session[]
+  workspaces       WorkspaceMember[]
+  workspacesOwned  Workspace[]     @relation("UserOwnsWorkspaces")
 
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
-  createdEntries ContentEntry[]  @relation("EntryCreatedBy")
-  updatedEntries ContentEntry[]  @relation("EntryUpdatedBy")
+  createdEntries   ContentEntry[]  @relation("EntryCreatedBy")
+  updatedEntries   ContentEntry[]  @relation("EntryUpdatedBy")
 }
 
 model Account {
@@ -158,16 +159,16 @@ model Session {
 /// RBAC (Roles & Permissions)
 /// =======================
 model Role {
-  id           String        @id @default(cuid())
+  id           String          @id @default(cuid())
   workspaceId  String
   name         String
   description  String?
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rolePerms    RolePermission[]
   members      WorkspaceMember[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@unique([workspaceId, name])
 }
@@ -197,44 +198,62 @@ model RolePermission {
 /// Content Model Builder
 /// =======================
 model ContentType {
-  id            String        @id @default(cuid())
-  workspaceId   String
-  name          String
-  apiKey        String
-  description   String?
-  visibility    Visibility    @default(PRIVATE)
-  fields        ContentField[]
-  entries       ContentEntry[]
+  id               String           @id @default(cuid())
+  workspaceId      String
+  name             String
+  apiKey           String
+  description      String?
+  visibility       Visibility       @default(PRIVATE)
+  fields           ContentField[]
+  entries          ContentEntry[]
   targetedByConfigs RelationConfig[] @relation("TargetCT")
-  seoEnabled    Boolean       @default(true)
+  seoEnabled       Boolean          @default(true)
 
-  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@unique([workspaceId, apiKey])
   @@unique([workspaceId, name])
 }
 
 model ContentField {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   contentTypeId  String
   name           String
   apiKey         String
   type           FieldType
-  isRequired     Boolean       @default(false)
-  isUnique       Boolean       @default(false)
-  position       Int           @default(0)
+  isRequired     Boolean         @default(false)
+  isUnique       Boolean         @default(false)
+  position       Int             @default(0)
+
+  // batasan untuk TEXT / NUMBER
   minLength      Int?
   maxLength      Int?
   minNumber      Float?
   maxNumber      Float?
+
+  // untuk SLUG
   slugFrom       String?
+
+  // konfigurasi fleksibel per field (MEDIA/RELATION/validasi lain)
+  // contoh:
+  // {
+  //   "acceptMimeTypes": ["image/png","image/jpeg","image/webp"],
+  //   "maxFiles": 1,
+  //   "maxSizeMB": 5,
+  //   "many": true,
+  //   "minCount": 0,
+  //   "maxCount": 5,
+  //   "targetTypeApiKey": "brand"
+  // }
+  config         Json?
+
   relation       RelationConfig?
 
-  contentType ContentType @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
-  values      FieldValue[]  @relation("FieldToValues")
-  relations   ContentRelation[] @relation("FieldToRelations")
+  contentType    ContentType     @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+  values         FieldValue[]    @relation("FieldToValues")
+  relations      ContentRelation[] @relation("FieldToRelations")
 
   @@unique([contentTypeId, apiKey])
 }
@@ -281,6 +300,8 @@ model ContentEntry {
 
   @@index([workspaceId, contentTypeId])
   @@index([isPublished, publishedAt])
+  // opsional gabungan untuk query publik:
+  // @@index([workspaceId, contentTypeId, isPublished, publishedAt])
 }
 
 model FieldValue {
@@ -327,10 +348,10 @@ model ContentRelation {
 /// Subscriptions (SaaS)
 /// =======================
 model Plan {
-  id           String   @id @default(cuid())
-  name         String   @unique
-  monthlyPrice Int      @default(0)
-  yearlyPrice  Int      @default(0)
+  id              String   @id @default(cuid())
+  name            String   @unique
+  monthlyPrice    Int      @default(0)
+  yearlyPrice     Int      @default(0)
   maxMembers       Int?
   maxContentTypes  Int?
   maxEntries       Int?
@@ -372,19 +393,19 @@ model ProductCategory {
 }
 
 model Product {
-  id            String           @id @default(cuid())
+  id            String            @id @default(cuid())
   workspaceId   String
   name          String
-  slug          String           @unique
-  price         Int              @default(0)
-  sku           String?          @unique
+  slug          String            @unique
+  price         Int               @default(0)
+  sku           String?           @unique
   description   String?
   brandId       String?
   categoryId    String?
 
-  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  brand     Brand?          @relation(fields: [brandId], references: [id])
-  category  ProductCategory?@relation(fields: [categoryId], references: [id])
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  brand     Brand?           @relation(fields: [brandId], references: [id])
+  category  ProductCategory? @relation(fields: [categoryId], references: [id])
 
   seoTitle        String?
   metaDescription String?

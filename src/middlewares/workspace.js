@@ -7,8 +7,15 @@ export function workspaceContext(req, res, next) {
     req.user?.workspaceId ||
     null;
 
-  if (!ws) return res.status(400).json({ error: "workspaceId required (x-workspace-id header or param)" });
+  if (!ws)
+    return res
+      .status(400)
+      .json({ error: "workspaceId required (x-workspace-id header or param)" });
+
   req.ctx = req.ctx || {};
   req.ctx.workspaceId = String(ws);
   next();
 }
+
+// alias supaya route yang pakai workspaceGuard tetap jalan
+export { workspaceContext as workspaceGuard };

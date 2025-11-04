@@ -19,7 +19,8 @@ import contentAdminRoutes from "./admin/content.admin.routes.js";
 import brandAdminRoutes from "./admin/brand.admin.routes.js";
 import productAdminRoutes from "./admin/product.admin.routes.js";
 import planAdminRoutes from "./admin/plan.admin.routes.js";
-
+import m2mAdminRoutes from "./admin/content.m2m.admin.routes.js";
+import denormAdmin from "./admin/content.denorm.routes.js";
 // Public (no auth)
 import contentPublicRoutes from "./public/content.public.routes.js";
 import docsRoutes from "./docs.routes.js"; 
@@ -48,9 +49,11 @@ router.use("/admin/content", contentAdminRoutes);
 router.use("/admin/brands", brandAdminRoutes);
 router.use("/admin/products", productAdminRoutes);
 router.use("/admin/plans", planAdminRoutes);
-
+router.use("/admin/content/m2m", m2mAdminRoutes);
+router.use("/admin/content/denorm", denormAdmin);
 // --- Public (no auth) ---
 router.use("/public/content", contentPublicRoutes);
 router.use("/docs", docsRoutes);
 router.use("/uploads", uploadRoutes);
+router.use("/content", contentPublicRoutes);
 export default router;

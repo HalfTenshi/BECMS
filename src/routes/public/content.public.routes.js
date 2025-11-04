@@ -1,6 +1,7 @@
 import express from "express";
 import prisma from "../../config/prismaClient.js";
 import { workspaceContext } from "../../middlewares/workspace.js";
+import contentEntryController from "../../modules/content/contentEntry.controller.js";
 
 const r = express.Router();
 
@@ -49,5 +50,6 @@ r.get("/:apiKey/:slug", workspaceContext, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+r.get("/:contentType/search", workspaceContext, contentEntryController.searchForRelation);
 
 export default r;

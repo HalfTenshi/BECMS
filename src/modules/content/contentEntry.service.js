@@ -1,7 +1,8 @@
-import contentEntryRepository from "./contentEntry.repository.js";
+import contentEntryRepository, { findManyWithM2mRelated } from "./contentEntry.repository.js";
 import prisma from "../../config/prismaClient.js";
 import { generateSlug } from "../../utils/slugGenerator.js";
 import { enforceOnPayload } from "./entry.validation.js";
+import { recomputeDenormForTargetChange } from "../../services/denorm.service.js";
 
 class ContentEntryService {
   // ===================== READ =====================
@@ -15,13 +16,175 @@ class ContentEntryService {
     return entry;
   }
 
+  // ✅ NEW: getById dengan dukungan include=relations & depth
+  /**
+   * @param {Object} params
+   * @param {string} params.id
+   * @param {string} params.workspaceId
+   * @param {string} [params.include=""]
+   * @param {number} [params.depth=0]
+   * @param {"admin"|"public"} [params.scope="admin"]
+   */
+  async getByIdWithInclude({ id, workspaceId, include = "", depth = 0, scope = "admin" }) {
+    const entry = await prisma.contentEntry.findFirst({
+      where: { id, workspaceId },
+      include: { contentType: true, values: true },
+    });
+    if (!entry) throw new Error("Entry not found");
+
+    if (include === "relations") {
+      const relFields = await prisma.contentField.findMany({
+        where: { contentTypeId: entry.contentTypeId, type: "RELATION" },
+        select: { id: true },
+      });
+      const relFieldIds = relFields.map((f) => f.id);
+
+      const [pairs1N, pairsM2M] = await prisma.$transaction([
+        prisma.contentRelation.findMany({
+          where: { fieldId: { in: relFieldIds }, fromEntryId: entry.id },
+          select: { fieldId: true, toEntryId: true },
+        }),
+        prisma.contentRelationM2M.findMany({
+          where: { relationFieldId: { in: relFieldIds }, fromEntryId: entry.id },
+          select: { relationFieldId: true, toEntryId: true },
+        }),
+      ]);
+
+      const map = {};
+      for (const p of pairs1N) {
+        const k = p.fieldId;
+        map[k] = map[k] || [];
+        map[k].push(p.toEntryId);
+      }
+      for (const p of pairsM2M) {
+        const k = p.relationFieldId;
+        map[k] = map[k] || [];
+        map[k].push(p.toEntryId);
+      }
+      for (const k of Object.keys(map)) map[k] = [...new Set(map[k])];
+
+      entry.relations = map;
+
+      if (Number(depth) >= 1) {
+        const flatIds = [...new Set(Object.values(map).flat())];
+        if (flatIds.length) {
+          const where = { id: { in: flatIds } };
+          if (scope === "public") where.isPublished = true;
+
+          const targets = await prisma.contentEntry.findMany({
+            where,
+            select: {
+              id: true,
+              slug: true,
+              seoTitle: true,
+              contentTypeId: true,
+              isPublished: true,
+              publishedAt: true,
+            },
+          });
+          const tmap = Object.fromEntries(targets.map((t) => [t.id, t]));
+          for (const k of Object.keys(entry.relations)) {
+            entry.relations[k] = entry.relations[k].map((tid) => tmap[tid]).filter(Boolean);
+          }
+        }
+      }
+    }
+
+    return entry;
+  }
+
+  // Cari ContentType by apiKey dalam workspace
+  async _resolveCTIdOrThrow(workspaceId, contentTypeApiKey) {
+    const ct = await prisma.contentType.findFirst({
+      where: { workspaceId, apiKey: contentTypeApiKey },
+      select: { id: true },
+    });
+    if (!ct) throw new Error("ContentType not found");
+    return ct.id;
+  }
+
+  // 🔎 Util search untuk dropdown/multiselect relasi
+  async searchForRelation({
+    workspaceId,
+    contentTypeApiKey,
+    q = "",
+    page = 1,
+    pageSize = 10,
+    sort = "publishedAt:desc",
+    scope = "public",
+  }) {
+    const contentTypeId = await this._resolveCTIdOrThrow(workspaceId, contentTypeApiKey);
+
+    const skip = (Number(page) - 1) * Number(pageSize);
+    const [sortField, sortDir] = (sort || "publishedAt:desc").split(":");
+    const orderBy = [{ [sortField || "publishedAt"]: (sortDir || "desc").toLowerCase() }];
+
+    const where = {
+      workspaceId,
+      contentTypeId,
+      ...(q
+        ? {
+            OR: [
+              { seoTitle: { contains: q, mode: "insensitive" } },
+              { slug: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(scope === "public" ? { isPublished: true } : {}),
+    };
+
+    const [rows, total] = await prisma.$transaction([
+      prisma.contentEntry.findMany({
+        where,
+        orderBy,
+        skip,
+        take: Number(pageSize),
+        select: {
+          id: true,
+          slug: true,
+          seoTitle: true,
+          publishedAt: true,
+          isPublished: true,
+        },
+      }),
+      prisma.contentEntry.count({ where }),
+    ]);
+
+    return { rows, total, page: Number(page), pageSize: Number(pageSize) };
+  }
+
+  // ✅ Listing by ContentType + filter relasi M2M (fieldId + related)
+  async listByContentTypeWithM2M({
+    workspaceId,
+    contentTypeApiKey,
+    fieldId,
+    related,
+    page = 1,
+    pageSize = 20,
+  }) {
+    const ct = await prisma.contentType.findFirst({
+      where: { workspaceId, apiKey: contentTypeApiKey },
+      select: { id: true },
+    });
+    if (!ct) throw new Error("ContentType not found");
+
+    return findManyWithM2mRelated({
+      workspaceId,
+      contentTypeId: ct.id,
+      fieldId,
+      related,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
+  }
+
   // ===================== CREATE =====================
   /**
    * data:
    * {
    *   workspaceId: string,
    *   contentTypeId: string,
-   *   values: [{ apiKey, value }],           // nilai field dinamis
+   *   values: [{ apiKey, value }],
    *   slug?, seoTitle?, metaDescription?, keywords?, isPublished?, publishedAt?,
    *   createdById?, updatedById?
    * }
@@ -31,25 +194,17 @@ class ContentEntryService {
       throw new Error("workspaceId and contentTypeId required");
     }
 
-    // 1) Enforce validasi terhadap definisi ContentField (required/unique/min/max/type/slugFrom/RELATION)
     const { fieldValues, relations, generated } = await enforceOnPayload({
       contentTypeId: data.contentTypeId,
       entryId: null,
       values: data.values || [],
     });
 
-    // 2) Siapkan slug (prioritas: explicit slug -> generate dari seoTitle -> generate dari slugFrom)
     let finalSlug = data.slug ?? null;
-    if (!finalSlug && data.seoTitle) {
-      finalSlug = generateSlug(data.seoTitle);
-    }
-    if (!finalSlug && generated.slug) {
-      finalSlug = generated.slug;
-    }
+    if (!finalSlug && data.seoTitle) finalSlug = generateSlug(data.seoTitle);
+    if (!finalSlug && generated.slug) finalSlug = generated.slug;
 
-    // 3) Tulis entry + FieldValue + ContentRelation dalam 1 transaksi
     const entry = await prisma.$transaction(async (tx) => {
-      // 3a) Create entry
       const created = await tx.contentEntry.create({
         data: {
           workspaceId: data.workspaceId,
@@ -65,7 +220,6 @@ class ContentEntryService {
         },
       });
 
-      // 3b) Field values (TEXT/RICH_TEXT/NUMBER/BOOLEAN/DATE/JSON/SLUG)
       for (const fv of fieldValues) {
         await tx.fieldValue.create({
           data: {
@@ -76,7 +230,6 @@ class ContentEntryService {
         });
       }
 
-      // 3c) Relations (RELATION → ContentRelation)
       for (const r of relations) {
         for (const toId of r.targetIds) {
           await tx.contentRelation.create({
@@ -93,6 +246,12 @@ class ContentEntryService {
       return created;
     });
 
+    // 🔁 DENORM HOOK: target entry baru dibuat → sinkronkan semua sumber yang terkait
+    await recomputeDenormForTargetChange({
+      workspaceId: data.workspaceId,
+      targetEntryId: entry.id,
+    });
+
     return entry;
   }
 
@@ -100,7 +259,7 @@ class ContentEntryService {
   /**
    * data:
    * {
-   *   values?: [{ apiKey, value }],      // hanya field yang ingin diubah
+   *   values?: [{ apiKey, value }],
    *   slug?, seoTitle?, metaDescription?, keywords?, isPublished?, publishedAt?,
    *   updatedById?
    * }
@@ -109,33 +268,25 @@ class ContentEntryService {
     const existing = await contentEntryRepository.findById(id);
     if (!existing) throw new Error("Entry not found");
 
-    // 1) Siapkan slug bila tidak diberikan
     let finalSlug = data.slug ?? existing.slug ?? null;
     if (!data.slug && data.seoTitle && !existing.slug) {
       finalSlug = generateSlug(data.seoTitle);
     }
 
-    // 2) Validasi & mapping ulang hanya untuk field yang dikirim
     let fieldValues = [];
     let relations = [];
     if (Array.isArray(data.values) && data.values.length > 0) {
       const enforced = await enforceOnPayload({
         contentTypeId: existing.contentTypeId,
-        entryId: id, // agar unique check mengecualikan dirinya
+        entryId: id,
         values: data.values,
       });
       fieldValues = enforced.fieldValues;
       relations = enforced.relations;
-
-      // Kalau slug digenerate dari slugFrom dan entry sebelumnya belum punya slug, terapkan
-      if (!finalSlug && enforced.generated?.slug) {
-        finalSlug = enforced.generated.slug;
-      }
+      if (!finalSlug && enforced.generated?.slug) finalSlug = enforced.generated.slug;
     }
 
-    // 3) Transaksi update: meta entry + replace FieldValue yg dikirim + replace Relation untuk field yg dikirim
     const updated = await prisma.$transaction(async (tx) => {
-      // 3a) Update meta entry
       const saved = await tx.contentEntry.update({
         where: { id },
         data: {
@@ -143,22 +294,18 @@ class ContentEntryService {
           seoTitle: data.seoTitle ?? existing.seoTitle,
           metaDescription: data.metaDescription ?? existing.metaDescription,
           keywords: data.keywords ?? existing.keywords,
-          isPublished: typeof data.isPublished === "boolean" ? data.isPublished : existing.isPublished,
+          isPublished:
+            typeof data.isPublished === "boolean" ? data.isPublished : existing.isPublished,
           publishedAt: data.publishedAt ?? existing.publishedAt,
           updatedById: data.updatedById ?? existing.updatedById,
         },
       });
 
-      // 3b) Jika ada perubahan values, replace per-fieldId yang dikirim
       if (fieldValues.length > 0) {
         const fieldIdsChanged = [...new Set(fieldValues.map((fv) => fv.fieldId))];
-
-        // Hapus value lama untuk field yang berubah
         await tx.fieldValue.deleteMany({
           where: { entryId: id, fieldId: { in: fieldIdsChanged } },
         });
-
-        // Tulis value baru
         for (const fv of fieldValues) {
           await tx.fieldValue.create({
             data: {
@@ -170,14 +317,11 @@ class ContentEntryService {
         }
       }
 
-      // 3c) Jika ada perubahan RELATION, replace hubungan untuk field yang dikirim
       if (relations.length > 0) {
         const relFieldIds = [...new Set(relations.map((r) => r.fieldId))];
-
         await tx.contentRelation.deleteMany({
           where: { fromEntryId: id, fieldId: { in: relFieldIds } },
         });
-
         for (const r of relations) {
           for (const toId of r.targetIds) {
             await tx.contentRelation.create({
@@ -193,6 +337,12 @@ class ContentEntryService {
       }
 
       return saved;
+    });
+
+    // 🔁 DENORM HOOK: target entry berubah → sinkronkan semua sumber yang terkait
+    await recomputeDenormForTargetChange({
+      workspaceId: existing.workspaceId,
+      targetEntryId: id,
     });
 
     return updated;

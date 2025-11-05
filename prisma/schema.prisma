@@ -292,12 +292,12 @@ model ContentEntry {
   id              String        @id @default(cuid())
   workspaceId     String
   contentTypeId   String
-  slug             String?       @unique
-  seoTitle         String?
-  metaDescription  String?
-  keywords         String[]      @default([])
-  isPublished      Boolean       @default(false)
-  publishedAt      DateTime?
+  slug            String?       @unique
+  seoTitle        String?
+  metaDescription String?       @db.VarChar(160) // ← batas 160 karakter (SEO)
+  keywords        String[]      @default([])
+  isPublished     Boolean       @default(false)
+  publishedAt     DateTime?
 
   createdById   String?
   updatedById   String?

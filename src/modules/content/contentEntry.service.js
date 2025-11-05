@@ -5,6 +5,27 @@ import { enforceOnPayload } from "./entry.validation.js";
 import { recomputeDenormForTargetChange } from "../../services/denorm.service.js";
 
 class ContentEntryService {
+  // ===================== UTIL: SEO Normalization =====================
+  _normalizeSeoInput(data = {}) {
+    const out = { ...data };
+
+    // metaDescription max 160 chars
+    if (typeof out.metaDescription === "string" && out.metaDescription.length > 160) {
+      out.metaDescription = out.metaDescription.slice(0, 160);
+    }
+
+    // keywords: allow "a,b,c" or ["a","b","c"]
+    if (typeof out.keywords === "string") {
+      out.keywords = out.keywords
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (!Array.isArray(out.keywords)) out.keywords = [];
+
+    return out;
+  }
+
   // ===================== READ =====================
   async getAll() {
     return await contentEntryRepository.findAll();
@@ -16,7 +37,7 @@ class ContentEntryService {
     return entry;
   }
 
-  // ✅ NEW: getById dengan dukungan include=relations & depth
+  // ✅ getById dengan dukungan include=relations & depth
   /**
    * @param {Object} params
    * @param {string} params.id
@@ -194,6 +215,9 @@ class ContentEntryService {
       throw new Error("workspaceId and contentTypeId required");
     }
 
+    // Normalisasi SEO (limit 160 & keywords → array)
+    data = this._normalizeSeoInput(data);
+
     const { fieldValues, relations, generated } = await enforceOnPayload({
       contentTypeId: data.contentTypeId,
       entryId: null,
@@ -211,7 +235,7 @@ class ContentEntryService {
           contentTypeId: data.contentTypeId,
           slug: finalSlug,
           seoTitle: data.seoTitle ?? null,
-          metaDescription: data.metaDescription ?? null,
+          metaDescription: data.metaDescription ?? null, // ≤160 dijaga di normalize
           keywords: data.keywords ?? [],
           isPublished: !!data.isPublished,
           publishedAt: data.publishedAt ?? null,
@@ -268,6 +292,9 @@ class ContentEntryService {
     const existing = await contentEntryRepository.findById(id);
     if (!existing) throw new Error("Entry not found");
 
+    // Normalisasi SEO (limit 160 & keywords → array)
+    data = this._normalizeSeoInput(data);
+
     let finalSlug = data.slug ?? existing.slug ?? null;
     if (!data.slug && data.seoTitle && !existing.slug) {
       finalSlug = generateSlug(data.seoTitle);
@@ -292,7 +319,7 @@ class ContentEntryService {
         data: {
           slug: finalSlug,
           seoTitle: data.seoTitle ?? existing.seoTitle,
-          metaDescription: data.metaDescription ?? existing.metaDescription,
+          metaDescription: data.metaDescription ?? existing.metaDescription, // ≤160 dijaga
           keywords: data.keywords ?? existing.keywords,
           isPublished:
             typeof data.isPublished === "boolean" ? data.isPublished : existing.isPublished,

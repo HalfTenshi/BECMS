@@ -39,9 +39,33 @@ class ContentEntryController {
   }
 
   // ===================== WRITE =====================
+  /**
+   * Body contoh:
+   * {
+   *   "contentTypeId": "<ct-id>",
+   *   "values": [{ "apiKey": "title", "value": "Hello" }],
+   *   "seoTitle": "Judul SEO",
+   *   "metaDescription": "Ringkasan maksimal 160 karakter",
+   *   "keywords": ["cms","seo"] // atau "cms,seo"
+   *   "slug": "judul-seo",
+   *   "isPublished": false,
+   *   "publishedAt": null
+   * }
+   */
   async create(req, res) {
     try {
-      const result = await contentEntryService.create(req.body);
+      const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
+
+      // Pastikan field SEO ikut diteruskan
+      const payload = {
+        ...req.body,
+        workspaceId,
+        // metaDescription & keywords akan dinormalisasi di service (≤160, array)
+        metaDescription: req.body?.metaDescription,
+        keywords: req.body?.keywords,
+      };
+
+      const result = await contentEntryService.create(payload);
       res.status(201).json(result);
     } catch (error) {
       res.status(400).json({ message: error.message });
@@ -51,7 +75,15 @@ class ContentEntryController {
   async update(req, res) {
     try {
       const { id } = req.params;
-      const result = await contentEntryService.update(id, req.body);
+
+      // Pastikan field SEO ikut diteruskan saat update juga
+      const payload = {
+        ...req.body,
+        metaDescription: req.body?.metaDescription,
+        keywords: req.body?.keywords, // boleh array atau "a,b,c" (service akan normalisasi)
+      };
+
+      const result = await contentEntryService.update(id, payload);
       res.json(result);
     } catch (error) {
       res.status(400).json({ message: error.message });

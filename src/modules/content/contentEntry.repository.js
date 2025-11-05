@@ -1,25 +1,61 @@
 import prisma from "../../config/prismaClient.js";
 
 class ContentEntryRepository {
-  async findAll() {
+  async findAll({ where = {}, include = { contentType: true, values: true }, orderBy = { createdAt: "desc" }, skip, take } = {}) {
     return prisma.contentEntry.findMany({
-      include: { contentType: true, values: true },
+      where,
+      include,
+      orderBy,
+      skip,
+      take,
     });
   }
 
-  async findById(id) {
+  async findById(id, include = { contentType: true, values: true }) {
     return prisma.contentEntry.findUnique({
       where: { id },
-      include: { contentType: true, values: true },
+      include,
     });
   }
 
+  /**
+   * Create entry + SEO fields (metaDescription, keywords)
+   * NOTE: Normalisasi dan limit 160 char dilakukan di Service,
+   * repository menerima data yang sudah beres.
+   */
   async create(data) {
-    return prisma.contentEntry.create({ data });
+    return prisma.contentEntry.create({
+      data: {
+        workspaceId: data.workspaceId,
+        contentTypeId: data.contentTypeId,
+        slug: data.slug ?? null,
+        seoTitle: data.seoTitle ?? null,
+        metaDescription: data.metaDescription ?? null, // ≤160 sudah dijaga di service
+        keywords: Array.isArray(data.keywords) ? data.keywords : [], // service sudah normalisasi, di sini berjaga2
+        isPublished: !!data.isPublished,
+        publishedAt: data.publishedAt ?? null,
+        createdById: data.createdById ?? null,
+        updatedById: data.updatedById ?? null,
+      },
+    });
   }
 
+  /**
+   * Update entry + SEO fields (metaDescription, keywords)
+   */
   async update(id, data) {
-    return prisma.contentEntry.update({ where: { id }, data });
+    return prisma.contentEntry.update({
+      where: { id },
+      data: {
+        slug: data.slug ?? undefined,
+        seoTitle: data.seoTitle ?? undefined,
+        metaDescription: data.metaDescription ?? undefined, // ≤160 sudah dijaga di service
+        keywords: Array.isArray(data.keywords) ? data.keywords : undefined,
+        isPublished: typeof data.isPublished === "boolean" ? data.isPublished : undefined,
+        publishedAt: data.publishedAt ?? undefined,
+        updatedById: data.updatedById ?? undefined,
+      },
+    });
   }
 
   async delete(id) {

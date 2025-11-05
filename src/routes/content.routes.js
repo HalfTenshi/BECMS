@@ -10,6 +10,7 @@ import contentTypeController from "../modules/content/contentType.controller.js"
 import contentEntryController from "../modules/content/contentEntry.controller.js";
 import fieldValueController from "../modules/content/fieldValue/fieldValue.controller.js";
 import contentRelationController from "../modules/content/contentRelation/contentRelation.controller.js";
+import contentEntryRoutes from "./contentEntry.routes.js";
 
 const router = express.Router();
 
@@ -123,5 +124,6 @@ router.delete(
   authorize(ACTIONS.DELETE, RESOURCES.CONTENT_ENTRIES),
   contentRelationController.delete
 );
+router.use("/entries", contentEntryRoutes);
 
 export default router;

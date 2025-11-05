@@ -92,6 +92,9 @@ model Workspace {
   // back-relation untuk ContentRelationM2M.workspace
   contentRelationsM2M ContentRelationM2M[]
 
+  // ✅ back-relation untuk Asset.workspace
+  assets             Asset[]
+
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -134,6 +137,12 @@ model User {
 
   createdEntries   ContentEntry[]  @relation("EntryCreatedBy")
   updatedEntries   ContentEntry[]  @relation("EntryUpdatedBy")
+
+  // ⬇️ back-relation untuk PasswordResetToken.user
+  passwordResetTokens PasswordResetToken[]
+
+  // ✅ back-relation untuk Asset.createdBy
+  createdAssets     Asset[]
 }
 
 model Account {
@@ -158,6 +167,20 @@ model Session {
   ip        String?
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+/// --- NEW: Token reset password (aman & bisa di-revoke)
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 /// =======================
@@ -235,17 +258,11 @@ model ContentField {
   isUnique       Boolean         @default(false)
   position       Int             @default(0)
 
-  // batasan untuk TEXT / NUMBER
   minLength      Int?
   maxLength      Int?
   minNumber      Float?
   maxNumber      Float?
-
-  // untuk SLUG
   slugFrom       String?
-
-  // konfigurasi fleksibel per field (MEDIA/RELATION/validasi lain)
-  // contoh JSON di kolom config
   config         Json?
 
   relation       RelationConfig?
@@ -253,8 +270,6 @@ model ContentField {
   contentType    ContentType     @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
   values         FieldValue[]    @relation("FieldToValues")
   relations      ContentRelation[] @relation("FieldToRelations")
-
-  // back-relation untuk ContentRelationM2M.relationField
   m2mRelations   ContentRelationM2M[]
 
   @@unique([contentTypeId, apiKey])
@@ -277,7 +292,6 @@ model ContentEntry {
   id              String        @id @default(cuid())
   workspaceId     String
   contentTypeId   String
-
   slug             String?       @unique
   seoTitle         String?
   metaDescription  String?
@@ -297,7 +311,6 @@ model ContentEntry {
   outgoingRels  ContentRelation[] @relation("FromEntry")
   incomingRels  ContentRelation[] @relation("ToEntry")
 
-  // back-relations untuk M2M bernama
   m2mFromRelations ContentRelationM2M[] @relation("M2M_FromEntry")
   m2mToRelations   ContentRelationM2M[] @relation("M2M_ToEntry")
 
@@ -349,14 +362,14 @@ model ContentRelation {
 }
 
 /// =======================
-/// M2M Relations (First-Class)
+/// M2M Relations
 /// =======================
 model ContentRelationM2M {
   id               String   @id @default(cuid())
   workspaceId      String
-  relationFieldId  String    // ContentField.id (RELATION, kind = MANY_TO_MANY)
-  fromEntryId      String    // ContentEntry.id sumber
-  toEntryId        String    // ContentEntry.id target
+  relationFieldId  String
+  fromEntryId      String
+  toEntryId        String
   createdAt        DateTime  @default(now())
 
   workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -447,4 +460,35 @@ model Product {
   @@unique([workspaceId, name])
   @@index([brandId])
   @@index([categoryId])
+}
+
+/// =======================
+/// Media Library
+/// =======================
+model Asset {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  createdById  String?
+  filename     String
+  originalName String?
+  url          String
+  mime         String
+  size         Int
+  checksum     String?  @unique
+  width        Int?
+  height       Int?
+  durationMs   Int?
+  tags         String[] @default([])
+  folder       String?
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User?     @relation(fields: [createdById], references: [id])
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([mime])
+  @@index([folder])
+  @@index([createdAt])
 }

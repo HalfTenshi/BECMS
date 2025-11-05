@@ -28,9 +28,11 @@ class AuthController {
     }
   }
 
+  // ========== RESET PASSWORD ==========
   async requestReset(req, res) {
     try {
       const data = await authService.requestReset(req.body);
+      // selalu { ok: true } untuk anti user-enumeration
       res.json(data);
     } catch (e) {
       res.status(400).json({ error: e.message });
@@ -45,7 +47,8 @@ class AuthController {
       res.status(400).json({ error: e.message });
     }
   }
-   // === NEW ===
+
+  // ========== GOOGLE ONE-TAP ==========
   async googleOneTap(req, res) {
     try {
       const { idToken } = req.body; // FE kirim credential dari Google

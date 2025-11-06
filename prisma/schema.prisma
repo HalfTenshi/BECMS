@@ -249,14 +249,14 @@ model ContentType {
 }
 
 model ContentField {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   contentTypeId  String
   name           String
   apiKey         String
   type           FieldType
-  isRequired     Boolean         @default(false)
-  isUnique       Boolean         @default(false)
-  position       Int             @default(0)
+  isRequired     Boolean            @default(false)
+  isUnique       Boolean            @default(false)
+  position       Int                @default(0)
 
   minLength      Int?
   maxLength      Int?
@@ -267,10 +267,14 @@ model ContentField {
 
   relation       RelationConfig?
 
-  contentType    ContentType     @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
-  values         FieldValue[]    @relation("FieldToValues")
-  relations      ContentRelation[] @relation("FieldToRelations")
+  contentType    ContentType        @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+  values         FieldValue[]       @relation("FieldToValues")
+  relations      ContentRelation[]  @relation("FieldToRelations")
   m2mRelations   ContentRelationM2M[]
+
+  // 🔹 Audit timestamps (disarankan untuk CMS builder)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   @@unique([contentTypeId, apiKey])
 }

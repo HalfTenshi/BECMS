@@ -3,14 +3,17 @@
   "name": "becms",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --watch src --ext js,json --exec node src/index.js"
-  },
-  "keywords": [],
+  "description": "BECMS Backend API",
   "author": "",
   "license": "ISC",
-  "description": "",
+  "scripts": {
+    "dev": "nodemon --watch src --ext js,json --exec node src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:seed": "node prisma/seed.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
     "@prisma/client": "^6.17.0",
     "bcrypt": "^6.0.0",

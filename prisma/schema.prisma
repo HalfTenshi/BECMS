@@ -71,32 +71,32 @@ enum ModuleKey {
 /// Multi-tenant boundary
 /// =======================
 model Workspace {
-  id                 String            @id @default(cuid())
-  name               String
-  slug               String            @unique
-  ownerId            String
-  owner              User              @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
-  planId             String?
-  plan               Plan?             @relation(fields: [planId], references: [id])
+  id                  String             @id @default(cuid())
+  name                String
+  slug                String             @unique
+  ownerId             String
+  owner               User               @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
+  planId              String?
+  plan                Plan?              @relation(fields: [planId], references: [id])
 
-  members            WorkspaceMember[]
-  roles              Role[]
-  permissions        Permission[]
-  contentTypes       ContentType[]
-  entries            ContentEntry[]
-  products           Product[]
-  brands             Brand[]
-  contentRelations   ContentRelation[]
-  productCategories  ProductCategory[]
+  members             WorkspaceMember[]
+  roles               Role[]
+  permissions         Permission[]
+  contentTypes        ContentType[]
+  entries             ContentEntry[]
+  products            Product[]
+  brands              Brand[]
+  contentRelations    ContentRelation[]
+  productCategories   ProductCategory[]
 
   // back-relation untuk ContentRelationM2M.workspace
   contentRelationsM2M ContentRelationM2M[]
 
   // ✅ back-relation untuk Asset.workspace
-  assets             Asset[]
+  assets              Asset[]
 
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
   @@index([slug])
 }
@@ -352,6 +352,8 @@ model ContentRelation {
   fieldId     String
   fromEntryId String
   toEntryId   String
+  // NEW: posisi untuk mengurutkan relasi non-M2M
+  position    Int          @default(0)
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   field     ContentField @relation("FieldToRelations", fields: [fieldId], references: [id], onDelete: Cascade)
@@ -363,6 +365,8 @@ model ContentRelation {
   @@unique([fieldId, fromEntryId, toEntryId])
   @@index([fromEntryId])
   @@index([toEntryId])
+  // NEW: index urutan per (fieldId, fromEntryId)
+  @@index([fieldId, fromEntryId, position], name: "idx_rel_order")
 }
 
 /// =======================
@@ -374,17 +378,21 @@ model ContentRelationM2M {
   relationFieldId  String
   fromEntryId      String
   toEntryId        String
-  createdAt        DateTime  @default(now())
+  // NEW: posisi untuk mengurutkan M2M
+  position         Int      @default(0)
+  createdAt        DateTime @default(now())
 
-  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  relationField    ContentField  @relation(fields: [relationFieldId], references: [id], onDelete: Cascade)
-  fromEntry        ContentEntry  @relation("M2M_FromEntry", fields: [fromEntryId], references: [id], onDelete: Cascade)
-  toEntry          ContentEntry  @relation("M2M_ToEntry",   fields: [toEntryId],   references: [id], onDelete: Cascade)
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  relationField ContentField @relation(fields: [relationFieldId], references: [id], onDelete: Cascade)
+  fromEntry     ContentEntry @relation("M2M_FromEntry", fields: [fromEntryId], references: [id], onDelete: Cascade)
+  toEntry       ContentEntry @relation("M2M_ToEntry",   fields: [toEntryId], references: [id], onDelete: Cascade)
 
   @@unique([relationFieldId, fromEntryId, toEntryId], name: "uniq_m2m_rel_triple")
   @@index([relationFieldId, fromEntryId], name: "idx_m2m_by_from")
   @@index([relationFieldId, toEntryId],   name: "idx_m2m_by_to")
   @@index([workspaceId],                  name: "idx_m2m_ws")
+  // NEW: index urutan per (relationFieldId, fromEntryId)
+  @@index([relationFieldId, fromEntryId, position], name: "idx_m2m_order")
 }
 
 /// =======================

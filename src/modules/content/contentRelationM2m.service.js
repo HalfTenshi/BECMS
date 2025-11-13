@@ -1,7 +1,8 @@
+// src/modules/content/contentRelationM2m.service.js
 import prisma from "../../config/prismaClient.js";
 import m2mRepo from "./contentRelationM2m.repository.js";
 
-function assert(cond, msg) { if (!cond) throw new Error(msg); }
+function assert(cond, msg) { if (!cond) { const e = new Error(msg); e.status = 400; throw e; } }
 
 class ContentRelationM2mService {
   async getRelationFieldOrThrow({ workspaceId, fieldId }) {
@@ -63,6 +64,19 @@ class ContentRelationM2mService {
       relationFieldId: fieldId,
       relatedEntryId,
       page, pageSize
+    });
+  }
+
+  // NEW: Reorder M2M — set urutan toEntryIds jadi 0..n (position ASC)
+  async reorder({ workspaceId, fieldId, fromEntryId, orderedToEntryIds = [] }) {
+    await this.getRelationFieldOrThrow({ workspaceId, fieldId });
+    assert(fromEntryId, "fromEntryId required");
+    assert(Array.isArray(orderedToEntryIds), "orderedToEntryIds must be array");
+
+    return m2mRepo.setOrder({
+      relationFieldId: fieldId,
+      fromEntryId,
+      orderedToEntryIds,
     });
   }
 }

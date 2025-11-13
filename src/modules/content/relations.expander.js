@@ -2,10 +2,9 @@
 import prisma from "../../config/prismaClient.js";
 
 /**
- * Ambil field RELATION untuk suatu ContentType dan config relasinya.
- * Mengikuti skema kamu:
- * - ContentField { type: RELATION, relation: RelationConfig? }
- * - RelationConfig { kind: RelationKind, targetContentTypeId }
+ * Ambil field RELATION untuk suatu ContentType dan config-nya.
+ * Skema:
+ * - ContentField { id, apiKey, name, type: "RELATION", relation: { id, kind, targetContentTypeId } }
  */
 async function getRelationFields({ contentTypeId }) {
   return prisma.contentField.findMany({
@@ -17,7 +16,7 @@ async function getRelationFields({ contentTypeId }) {
       relation: {
         select: {
           id: true,
-          kind: true,                // ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY
+          kind: true, // ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY
           targetContentTypeId: true,
         },
       },
@@ -27,48 +26,55 @@ async function getRelationFields({ contentTypeId }) {
 
 /**
  * Ambil link relasi secara bulk untuk sekumpulan entries & fields.
- * Mengikuti skema kamu:
- * - ContentRelation: { workspaceId, fieldId, fromEntryId, toEntryId }
- * - ContentRelationM2M: { workspaceId, relationFieldId, fromEntryId, toEntryId }
+ * Skema link:
+ * - ContentRelation:    { workspaceId, fieldId,         fromEntryId, toEntryId, position }
+ * - ContentRelationM2M: { workspaceId, relationFieldId, fromEntryId, toEntryId, position }
  */
 async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relationFields }) {
-  if (relationFields.length === 0 || fromEntryIds.length === 0) {
+  if (!relationFields?.length || !fromEntryIds?.length) {
     return { oneManyLinks: [], m2mLinks: [] };
   }
 
-  const fieldIds = relationFields.map(f => f.id);
-  const hasM2M = relationFields.some(f => f.relation?.kind === "MANY_TO_MANY");
-  const hasNonM2M = relationFields.some(f => f.relation?.kind !== "MANY_TO_MANY");
+  const hasM2M = relationFields.some((f) => f.relation?.kind === "MANY_TO_MANY");
+  const hasNonM2M = relationFields.some((f) => f.relation?.kind !== "MANY_TO_MANY");
 
   let oneManyLinks = [];
   let m2mLinks = [];
 
   if (hasNonM2M) {
-    oneManyLinks = await prisma.contentRelation.findMany({
-      where: {
-        fromEntryId: { in: fromEntryIds },
-        fieldId: { in: fieldIds.filter(id => {
-          const f = relationFields.find(ff => ff.id === id);
-          return f?.relation?.kind !== "MANY_TO_MANY";
-        }) },
-        ...(workspaceId ? { workspaceId } : {}),
-      },
-      select: { fromEntryId: true, fieldId: true, toEntryId: true },
-    });
+    const nonM2MFieldIds = relationFields
+      .filter((f) => f.relation?.kind !== "MANY_TO_MANY")
+      .map((f) => f.id);
+
+    if (nonM2MFieldIds.length) {
+      oneManyLinks = await prisma.contentRelation.findMany({
+        where: {
+          fromEntryId: { in: fromEntryIds },
+          fieldId: { in: nonM2MFieldIds },
+          ...(workspaceId ? { workspaceId } : {}),
+        },
+        // sertakan position untuk ordering
+        select: { fromEntryId: true, fieldId: true, toEntryId: true, position: true },
+      });
+    }
   }
 
   if (hasM2M) {
-    m2mLinks = await prisma.contentRelationM2M.findMany({
-      where: {
-        fromEntryId: { in: fromEntryIds },
-        relationFieldId: { in: fieldIds.filter(id => {
-          const f = relationFields.find(ff => ff.id === id);
-          return f?.relation?.kind === "MANY_TO_MANY";
-        }) },
-        ...(workspaceId ? { workspaceId } : {}),
-      },
-      select: { fromEntryId: true, relationFieldId: true, toEntryId: true },
-    });
+    const m2mFieldIds = relationFields
+      .filter((f) => f.relation?.kind === "MANY_TO_MANY")
+      .map((f) => f.id);
+
+    if (m2mFieldIds.length) {
+      m2mLinks = await prisma.contentRelationM2M.findMany({
+        where: {
+          fromEntryId: { in: fromEntryIds },
+          relationFieldId: { in: m2mFieldIds },
+          ...(workspaceId ? { workspaceId } : {}),
+        },
+        // sertakan position untuk ordering
+        select: { fromEntryId: true, relationFieldId: true, toEntryId: true, position: true },
+      });
+    }
   }
 
   return { oneManyLinks, m2mLinks };
@@ -76,8 +82,9 @@ async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relati
 
 /**
  * Ambil ringkasan entry target (published-only).
- * summary = "basic" -> select subset ringkas
- * summary = "full"  -> include: { values: true }
+ * summary:
+ *  - "basic" => subset ringkas (id, slug, seoTitle, metaDescription, publishedAt, contentTypeId)
+ *  - "full"  => include: { values: true } (otomatis dapat semua kolom termasuk contentTypeId)
  */
 async function fetchEntrySummaries({ entryIds, summary = "basic" }) {
   if (!entryIds || entryIds.length === 0) return [];
@@ -95,13 +102,18 @@ async function fetchEntrySummaries({ entryIds, summary = "basic" }) {
           seoTitle: true,
           metaDescription: true,
           publishedAt: true,
+          contentTypeId: true, // ⬅ penting untuk depth > 1 tanpa query tambahan
         },
   });
 }
 
 /**
  * Expand relasi utk depth 1.
- * Hasil: Map<entryId, { [fieldApiKey]: object | object[] }>
+ *
+ * Hasil:
+ *  - out: Map<entryId, { [fieldApiKey]: object | object[] }>
+ *  - targetContainers: Map<targetEntryId, object[]> → semua referensi
+ *    ke object target di dalam out (dipakai utk depth > 1).
  */
 async function expandRelationsDepth1({
   workspaceId = null,
@@ -110,16 +122,20 @@ async function expandRelationsDepth1({
   summary = "basic",
   allowedFieldApiKeys = null, // Set([...]) atau null
 }) {
-  const out = new Map(entries.map(e => [e.id, {}]));
-  if (relationFields.length === 0 || entries.length === 0) return out;
+  const out = new Map(entries.map((e) => [e.id, {}]));
+  const targetContainers = new Map(); // targetId -> array of object references
+
+  if (!relationFields?.length || !entries?.length) {
+    return { out, targetContainers };
+  }
 
   // Filter field berdasar whitelist API key bila ada
-  const filtered = relationFields.filter(f =>
-    !allowedFieldApiKeys || allowedFieldApiKeys.has(f.apiKey)
+  const filtered = relationFields.filter(
+    (f) => !allowedFieldApiKeys || allowedFieldApiKeys.has(f.apiKey),
   );
-  if (filtered.length === 0) return out;
+  if (filtered.length === 0) return { out, targetContainers };
 
-  const fromEntryIds = entries.map(e => e.id);
+  const fromEntryIds = entries.map((e) => e.id);
 
   const { oneManyLinks, m2mLinks } = await fetchRelationLinksBulk({
     workspaceId,
@@ -136,72 +152,123 @@ async function expandRelationsDepth1({
     entryIds: Array.from(allTargetIds),
     summary,
   });
-  const targetById = new Map(targets.map(t => [t.id, t]));
+  const targetById = new Map(targets.map((t) => [t.id, t]));
 
   // Buat index fieldId -> field meta (untuk baca kind & apiKey)
-  const fieldMetaById = new Map(filtered.map(f => [f.id, f]));
+  const fieldMetaById = new Map(filtered.map((f) => [f.id, f]));
 
-  // Isikan hasil utk ContentRelation (ONE/MANY-TO-ONE/MANY)
-  for (const link of oneManyLinks) {
-    const bucket = out.get(link.fromEntryId);
-    if (!bucket) continue;
+  // Helper: register referensi ke target object utk depth > 1
+  function registerTargetContainer(target) {
+    if (!target || !target.id) return;
+    if (!targetContainers.has(target.id)) {
+      targetContainers.set(target.id, []);
+    }
+    targetContainers.get(target.id).push(target);
+  }
 
-    const meta = fieldMetaById.get(link.fieldId);
-    if (!meta) continue;
+  // ==== HORMATI ORDER BY POSITION ====
 
-    const target = targetById.get(link.toEntryId);
-    if (!target) continue;
+  // Group ONE/MANY (non-M2M) per fromEntryId+fieldId
+  const groupedOneMany = new Map(); // key: `${fromEntryId}::${fieldId}` -> links[]
+  for (const l of oneManyLinks) {
+    const key = `${l.fromEntryId}::${l.fieldId}`;
+    if (!groupedOneMany.has(key)) groupedOneMany.set(key, []);
+    groupedOneMany.get(key).push(l);
+  }
+  // Sort tiap group by position
+  for (const [, arr] of groupedOneMany) {
+    arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }
 
-    const kind = meta.relation?.kind;
+  // Group M2M per fromEntryId+relationFieldId
+  const groupedM2M = new Map(); // key: `${fromEntryId}::${relationFieldId}` -> links[]
+  for (const l of m2mLinks) {
+    const key = `${l.fromEntryId}::${l.relationFieldId}`;
+    if (!groupedM2M.has(key)) groupedM2M.set(key, []);
+    groupedM2M.get(key).push(l);
+  }
+  for (const [, arr] of groupedM2M) {
+    arr.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }
 
-    // Single vs multi berdasarkan kind
-    if (kind === "ONE_TO_ONE" || kind === "MANY_TO_ONE") {
-      // Single
-      bucket[meta.apiKey] = target;
-    } else if (kind === "ONE_TO_MANY") {
-      // Multi
-      if (!Array.isArray(bucket[meta.apiKey])) bucket[meta.apiKey] = [];
-      // Hindari duplikat
-      if (!bucket[meta.apiKey].some(v => v.id === target.id)) {
-        bucket[meta.apiKey].push(target);
-      }
-    } else {
-      // fallback aman: array
-      if (!Array.isArray(bucket[meta.apiKey])) bucket[meta.apiKey] = [];
-      if (!bucket[meta.apiKey].some(v => v.id === target.id)) {
-        bucket[meta.apiKey].push(target);
+  // Isikan hasil utk ContentRelation (ONE/MANY-TO-ONE/MANY) sesuai urutan
+  for (const [, links] of groupedOneMany) {
+    for (const link of links) {
+      const bucket = out.get(link.fromEntryId);
+      if (!bucket) continue;
+
+      const meta = fieldMetaById.get(link.fieldId);
+      if (!meta) continue;
+
+      const target = targetById.get(link.toEntryId);
+      if (!target) continue;
+
+      const kind = meta.relation?.kind;
+      const apiKey = meta.apiKey;
+
+      // Single vs multi berdasarkan kind
+      if (kind === "ONE_TO_ONE" || kind === "MANY_TO_ONE") {
+        // Single: ambil yang posisi terkecil (karena sudah di-sort)
+        if (bucket[apiKey] == null) {
+          bucket[apiKey] = target;
+          registerTargetContainer(target);
+        }
+      } else if (kind === "ONE_TO_MANY") {
+        // Multi: array terurut
+        if (!Array.isArray(bucket[apiKey])) bucket[apiKey] = [];
+        if (!bucket[apiKey].some((v) => v.id === target.id)) {
+          bucket[apiKey].push(target);
+          registerTargetContainer(target);
+        }
+      } else {
+        // fallback aman: array
+        if (!Array.isArray(bucket[apiKey])) bucket[apiKey] = [];
+        if (!bucket[apiKey].some((v) => v.id === target.id)) {
+          bucket[apiKey].push(target);
+          registerTargetContainer(target);
+        }
       }
     }
   }
 
-  // Isikan hasil utk ContentRelationM2M (selalu multi)
-  for (const link of m2mLinks) {
-    const bucket = out.get(link.fromEntryId);
-    if (!bucket) continue;
+  // Isikan hasil utk ContentRelationM2M (selalu multi) sesuai urutan
+  for (const [, links] of groupedM2M) {
+    for (const link of links) {
+      const bucket = out.get(link.fromEntryId);
+      if (!bucket) continue;
 
-    const meta = fieldMetaById.get(link.relationFieldId);
-    if (!meta) continue;
+      const meta = fieldMetaById.get(link.relationFieldId);
+      if (!meta) continue;
 
-    const target = targetById.get(link.toEntryId);
-    if (!target) continue;
+      const target = targetById.get(link.toEntryId);
+      if (!target) continue;
 
-    if (!Array.isArray(bucket[meta.apiKey])) bucket[meta.apiKey] = [];
-    if (!bucket[meta.apiKey].some(v => v.id === target.id)) {
-      bucket[meta.apiKey].push(target);
+      const apiKey = meta.apiKey;
+
+      if (!Array.isArray(bucket[apiKey])) bucket[apiKey] = [];
+      if (!bucket[apiKey].some((v) => v.id === target.id)) {
+        bucket[apiKey].push(target);
+        registerTargetContainer(target);
+      }
     }
   }
 
-  return out;
+  return { out, targetContainers };
 }
 
 /**
  * API utama untuk ekspansi relasi.
  * - entries         : array ContentEntry (hasil findMany/findFirst)
- * - contentTypeId   : ContentType.id untuk membaca daftar field RELATION
- * - workspaceId     : opsional, untuk filter link relasi (aman multi-tenant)
- * - depth           : default 1, batasi hingga 3
+ * - contentTypeId   : ContentType.id untuk membaca daftar field RELATION (root)
+ * - workspaceId     : opsional, untuk filter link relasi (multi-tenant)
+ * - depth           : default 1, dibatasi maxDepth (5)
  * - summary         : "basic" | "full" (full = target include values)
- * - allowedFieldApiKeys : Set([...]) untuk whitelist field RELATION
+ * - allowedFieldApiKeys : Set([...]) untuk whitelist field RELATION di root
+ *
+ * Hasil:
+ *  - Map<entryId, { [fieldApiKey]: object | object[] }>
+ *  - Kalau depth > 1, setiap target object bisa punya:
+ *      _relations: { [fieldApiKey]: object | object[] }
  */
 export async function expandRelations({
   workspaceId = null,
@@ -213,9 +280,14 @@ export async function expandRelations({
 }) {
   if (!entries || entries.length === 0) return new Map();
 
+  const maxDepth = 5;
+  const safeDepth = Math.max(1, Math.min(depth ?? 1, maxDepth));
+
+  // Ambil field RELATION untuk CT root
   const relationFields = await getRelationFields({ contentTypeId });
-  // Depth 1
-  const level1 = await expandRelationsDepth1({
+
+  // LEVEL 1
+  const { out: level1, targetContainers } = await expandRelationsDepth1({
     workspaceId,
     entries,
     relationFields,
@@ -223,9 +295,49 @@ export async function expandRelations({
     allowedFieldApiKeys,
   });
 
-  // Untuk sekarang, hentikan di depth 1 agar aman & cepat.
-  // (Bisa dikembangkan: kumpulkan target per targetContentTypeId, lalu rekursif.)
-  if (depth <= 1) return level1;
+  // Kalau cuma depth=1, atau tidak ada target relasi, selesai
+  if (safeDepth <= 1 || targetContainers.size === 0) {
+    return level1;
+  }
+
+  // ==== DEPTH > 1 (PAKAI contentTypeId DARI TARGET YANG SUDAH DI-FETCH) ====
+  // Kumpulkan per contentTypeId tanpa query tambahan ke DB
+  const byContentType = new Map(); // contentTypeId -> [{ id }]
+  for (const [entryId, containers] of targetContainers.entries()) {
+    const anyObj = containers && containers[0];
+    if (!anyObj || !anyObj.contentTypeId) continue;
+    const ctId = anyObj.contentTypeId;
+    if (!byContentType.has(ctId)) {
+      byContentType.set(ctId, []);
+    }
+    byContentType.get(ctId).push({ id: entryId });
+  }
+
+  // Rekursif: expand utk setiap kelompok contentType target
+  for (const [ctId, ctEntries] of byContentType.entries()) {
+    const childMap = await expandRelations({
+      workspaceId,
+      entries: ctEntries,
+      contentTypeId: ctId,
+      depth: safeDepth - 1,
+      summary,
+      // di level dalam, biasanya semua relation boleh
+      allowedFieldApiKeys: null,
+    });
+
+    // Tempel hasil ke setiap object target yg merefer ke entryId tsb
+    for (const [entryId, relObject] of childMap.entries()) {
+      const containers = targetContainers.get(entryId);
+      if (!containers || !relObject) continue;
+
+      for (const obj of containers) {
+        obj._relations = {
+          ...(obj._relations || {}),
+          ...relObject,
+        };
+      }
+    }
+  }
 
   return level1;
 }

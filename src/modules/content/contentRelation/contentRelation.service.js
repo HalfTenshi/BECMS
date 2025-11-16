@@ -124,7 +124,7 @@ class ContentRelationService {
   async create(data) {
     assert(
       data?.workspaceId && data?.fieldId && data?.fromEntryId && data?.toEntryId,
-      "workspaceId, fieldId, fromEntryId, and toEntryId required"
+      "workspaceId, fieldId, fromEntryId, and toEntryId required",
     );
     return contentRelationRepository.create(data);
   }
@@ -141,27 +141,36 @@ class ContentRelationService {
   async append({ workspaceId, fieldId, fromEntryId, toEntryId }) {
     assert(
       workspaceId && fieldId && fromEntryId && toEntryId,
-      "workspaceId, fieldId, fromEntryId, toEntryId required"
+      "workspaceId, fieldId, fromEntryId, toEntryId required",
     );
 
     // 1) Validasi field RELATION + relation config
+    //    workspace dicek lewat contentType.workspaceId (bukan field.workspaceId)
     const field = await prisma.contentField.findUnique({
       where: { id: fieldId },
       select: {
         id: true,
         type: true,
         contentTypeId: true,
-        workspaceId: true,
         relation: {
           select: {
             kind: true,
             targetContentTypeId: true,
           },
         },
+        contentType: {
+          select: {
+            workspaceId: true,
+          },
+        },
       },
     });
 
-    assert(field && field.workspaceId === workspaceId, "Relation field not found in workspace");
+    assert(field, "Relation field not found");
+    assert(
+      field.contentType?.workspaceId === workspaceId,
+      "Relation field not found in workspace",
+    );
     assert(field.type === "RELATION", "Field is not RELATION type");
     assert(field.relation?.targetContentTypeId, "Missing relation targetContentTypeId");
 
@@ -243,21 +252,28 @@ class ContentRelationService {
   }) {
     assert(
       workspaceId && fieldId && relatedEntryId,
-      "workspaceId, fieldId, relatedEntryId required"
+      "workspaceId, fieldId, relatedEntryId required",
     );
 
     // Validasi field RELATION & pastikan BUKAN MANY_TO_MANY
+    // Lagi-lagi: workspace lewat contentType.workspaceId
     const field = await prisma.contentField.findUnique({
       where: { id: fieldId },
       select: {
         id: true,
         type: true,
-        workspaceId: true,
         relation: { select: { kind: true } },
+        contentType: {
+          select: { workspaceId: true },
+        },
       },
     });
 
-    assert(field && field.workspaceId === workspaceId, "Relation field not found in workspace");
+    assert(field, "Relation field not found");
+    assert(
+      field.contentType?.workspaceId === workspaceId,
+      "Relation field not found in workspace",
+    );
     assert(field.type === "RELATION", "Field is not RELATION type");
     assert(field.relation, "Missing relation config");
     assert(field.relation.kind !== "MANY_TO_MANY", "Use M2M service for MANY_TO_MANY");

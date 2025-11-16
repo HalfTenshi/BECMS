@@ -1,29 +1,62 @@
+// src/routes/contentField.routes.js
 import express from "express";
 import contentFieldController from "../modules/content/contentField.controller.js";
 import { auth } from "../middlewares/auth.js";
-import { workspaceGuard } from "../middlewares/workspace.js"; // asumsi: set req.workspaceId
+import { workspaceContext } from "../middlewares/workspace.js";
+import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router({ mergeParams: true });
 // base path akan dimount di: /api/content/types/:contentTypeId/fields
 
-router.use(auth, workspaceGuard);
+// Semua route di sini butuh auth + workspace (dari header / query)
+router.use(auth, workspaceContext);
 
 // List fields of a ContentType
-router.get("/", contentFieldController.list);
+// GET /api/content/types/:contentTypeId/fields
+router.get(
+  "/",
+  authorize("CONTENT_MODELS", "READ"),
+  contentFieldController.list
+);
 
 // Get one field
-router.get("/:fieldId", contentFieldController.detail);
+// GET /api/content/types/:contentTypeId/fields/:fieldId
+router.get(
+  "/:fieldId",
+  authorize("CONTENT_MODELS", "READ"),
+  contentFieldController.detail
+);
 
 // Create field
-router.post("/", contentFieldController.create);
+// POST /api/content/types/:contentTypeId/fields
+router.post(
+  "/",
+  authorize("CONTENT_MODELS", "CREATE"),
+  contentFieldController.create
+);
 
 // Update field
-router.put("/:fieldId", contentFieldController.update);
+// PUT /api/content/types/:contentTypeId/fields/:fieldId
+router.put(
+  "/:fieldId",
+  authorize("CONTENT_MODELS", "UPDATE"),
+  contentFieldController.update
+);
 
 // Delete field
-router.delete("/:fieldId", contentFieldController.remove);
+// DELETE /api/content/types/:contentTypeId/fields/:fieldId
+router.delete(
+  "/:fieldId",
+  authorize("CONTENT_MODELS", "DELETE"),
+  contentFieldController.remove
+);
 
 // Reorder fields (bulk)
-router.patch("/reorder", contentFieldController.reorder);
+// PATCH /api/content/types/:contentTypeId/fields/reorder
+router.patch(
+  "/reorder",
+  authorize("CONTENT_MODELS", "UPDATE"),
+  contentFieldController.reorder
+);
 
 export default router;

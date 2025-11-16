@@ -2,21 +2,21 @@
 import prisma from "../config/prismaClient.js";
 
 /**
- * Workspace context middleware (PUBLIC & PROTECTED friendly)
+ * Workspace context middleware
  * Sumber workspace:
- *  1) Header : x-workspace-id | x-workspace-slug
- *  2) Query  : workspaceId | workspaceSlug
- *  3) Params : workspaceId | workspaceSlug
- *  4) Body   : workspaceId | workspaceSlug
- *  5) (Opsional) req.user.defaultWorkspaceId  ← kalau route pakai auth & kamu menyimpan default WS di user
+ *  - Header : x-workspace-id | x-workspace-slug
+ *  - Query  : workspaceId | workspaceSlug
+ *  - Params : workspaceId | workspaceSlug
+ *  - Body   : workspaceId | workspaceSlug
+ *  - (opsional) req.user.defaultWorkspaceId
  *
- * Hasil:
- *  - req.ctx.workspaceId  (String)
- *  - req.workspace = { id: <String> }  (kompat untuk kode lama)
+ * Output:
+ *  - req.ctx.workspaceId
+ *  - req.workspace = { id }
+ *  - req.workspaceId
  */
 async function workspaceContext(req, res, next) {
   try {
-    // Kumpulkan kandidat ID/Slug dari berbagai lokasi
     const headerId   = req.header("x-workspace-id");
     const headerSlug = req.header("x-workspace-slug");
 
@@ -31,11 +31,11 @@ async function workspaceContext(req, res, next) {
 
     const userDefaultId = req.user?.defaultWorkspaceId || req.user?.workspaceId;
 
-    // Prioritas ambil ID langsung (kalau ada)
+    // 1) Prioritas ID langsung
     let workspaceId =
       headerId || queryId || paramId || bodyId || userDefaultId || null;
 
-    // Jika belum ada ID tapi ada slug → resolve slug -> id
+    // 2) Kalau belum ada ID tapi ada slug → resolve
     const slug = headerSlug || querySlug || paramSlug || bodySlug || null;
     if (!workspaceId && slug) {
       const ws = await prisma.workspace.findFirst({
@@ -50,7 +50,7 @@ async function workspaceContext(req, res, next) {
       workspaceId = ws.id;
     }
 
-    // Jika tetap kosong → minta klien kirimkan identifier
+    // 3) Kalau tetap kosong → tolak request
     if (!workspaceId) {
       return res.status(400).json({
         message:
@@ -58,10 +58,14 @@ async function workspaceContext(req, res, next) {
       });
     }
 
-    // Set ke context (kompatibel dengan kode lama & baru)
+    // 4) Set ke beberapa tempat (kompat lama & baru)
+    const wsId = String(workspaceId);          // ⬅⬅⬅ INI YANG TADI KURANG
+
     req.ctx = req.ctx || {};
-    req.ctx.workspaceId = String(workspaceId);
-    req.workspace = { id: String(workspaceId) };
+    req.ctx.workspaceId = wsId;
+
+    req.workspace = { id: wsId };
+    req.workspaceId = wsId;
 
     return next();
   } catch (e) {
@@ -69,9 +73,8 @@ async function workspaceContext(req, res, next) {
   }
 }
 
-// Alias untuk guard lama
+// Alias lama
 const workspaceGuard = workspaceContext;
 
-// ✅ Expose sebagai named export dan default export (ESM)
 export { workspaceContext, workspaceGuard };
 export default workspaceContext;

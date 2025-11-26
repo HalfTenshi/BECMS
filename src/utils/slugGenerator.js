@@ -1,12 +1,23 @@
 // src/utils/slugGenerator.js
 
-export function generateSlug(text) {
-  if (!text) return "";
-  return text
+export function generateSlug(text, opts = {}) {
+  const { maxLength = 190, fallback = "entry" } = opts;
+
+  if (!text || !String(text).trim()) return fallback;
+
+  let slug = text
     .toString()
+    .normalize("NFKD")                 // buang accent
+    .replace(/[\u0300-\u036f]/g, "")   // remove diacritic marks
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, "-")       // ubah spasi jadi tanda minus
-    .replace(/[^\w\-]+/g, "")   // hapus karakter non-alfanumerik
-    .replace(/\-\-+/g, "-");    // hapus tanda minus ganda
+    .replace(/[^\w\s-]/g, "")          // buang karakter non-alfanumerik
+    .replace(/\s+/g, "-")              // spasi → -
+    .replace(/-+/g, "-")               // -- → -
+    .replace(/^-+|-+$/g, "");          // trim - di awal/akhir
+
+  if (!slug) slug = fallback;
+  if (slug.length > maxLength) slug = slug.slice(0, maxLength);
+
+  return slug;
 }

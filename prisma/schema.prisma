@@ -51,6 +51,7 @@ enum PermissionAction {
   UPDATE
   DELETE
   PUBLISH
+  ALL
 }
 
 enum ModuleKey {
@@ -75,6 +76,8 @@ enum ModuleKey {
 
   ASSETS
   UPLOADS
+
+  ALL
 }
 
 /// =======================
@@ -102,7 +105,7 @@ model Workspace {
   // back-relation untuk ContentRelationM2M.workspace
   contentRelationsM2M ContentRelationM2M[]
 
-  // ✅ back-relation untuk Asset.workspace
+  // back-relation untuk Asset.workspace
   assets              Asset[]
 
   createdAt           DateTime           @default(now())
@@ -148,10 +151,10 @@ model User {
   createdEntries   ContentEntry[]  @relation("EntryCreatedBy")
   updatedEntries   ContentEntry[]  @relation("EntryUpdatedBy")
 
-  // ⬇️ back-relation untuk PasswordResetToken.user
+  // back-relation untuk PasswordResetToken.user
   passwordResetTokens PasswordResetToken[]
 
-  // ✅ back-relation untuk Asset.createdBy
+  // back-relation untuk Asset.createdBy
   createdAssets     Asset[]
 }
 
@@ -179,7 +182,7 @@ model Session {
   createdAt DateTime @default(now())
 }
 
-/// --- NEW: Token reset password (aman & bisa di-revoke)
+/// Token reset password
 model PasswordResetToken {
   id        String   @id @default(cuid())
   userId    String
@@ -218,7 +221,7 @@ model Permission {
   name        String
   module      ModuleKey
   action      PermissionAction
-  description String?         // ⬅️ DITAMBAHKAN (supaya cocok dengan seed.js)
+  description String?
 
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rolePerms   RolePermission[]
@@ -284,7 +287,6 @@ model ContentField {
   relations      ContentRelation[]  @relation("FieldToRelations")
   m2mRelations   ContentRelationM2M[]
 
-  // 🔹 Audit timestamps (disarankan untuk CMS builder)
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
@@ -308,9 +310,9 @@ model ContentEntry {
   id              String        @id @default(cuid())
   workspaceId     String
   contentTypeId   String
-  slug            String?       @unique
+  slug            String?
   seoTitle        String?
-  metaDescription String?       @db.VarChar(160) // ← batas 160 karakter (SEO)
+  metaDescription String?       @db.VarChar(160)
   keywords        String[]      @default([])
   isPublished     Boolean       @default(false)
   publishedAt     DateTime?
@@ -335,6 +337,7 @@ model ContentEntry {
 
   @@index([workspaceId, contentTypeId])
   @@index([isPublished, publishedAt])
+  @@unique([workspaceId, contentTypeId, slug])
 }
 
 model FieldValue {
@@ -364,7 +367,6 @@ model ContentRelation {
   fieldId     String
   fromEntryId String
   toEntryId   String
-  // NEW: posisi untuk mengurutkan relasi non-M2M
   position    Int          @default(0)
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -377,7 +379,6 @@ model ContentRelation {
   @@unique([fieldId, fromEntryId, toEntryId])
   @@index([fromEntryId])
   @@index([toEntryId])
-  // NEW: index urutan per (fieldId, fromEntryId)
   @@index([fieldId, fromEntryId, position], name: "idx_rel_order")
 }
 
@@ -390,7 +391,6 @@ model ContentRelationM2M {
   relationFieldId  String
   fromEntryId      String
   toEntryId        String
-  // NEW: posisi untuk mengurutkan M2M
   position         Int      @default(0)
   createdAt        DateTime @default(now())
 
@@ -403,7 +403,6 @@ model ContentRelationM2M {
   @@index([relationFieldId, fromEntryId], name: "idx_m2m_by_from")
   @@index([relationFieldId, toEntryId],   name: "idx_m2m_by_to")
   @@index([workspaceId],                  name: "idx_m2m_ws")
-  // NEW: index urutan per (relationFieldId, fromEntryId)
   @@index([relationFieldId, fromEntryId, position], name: "idx_m2m_order")
 }
 

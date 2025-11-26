@@ -169,7 +169,7 @@ const ROLE_PERMISSION_MATRIX = {
 // ---------------------------------------------------------------
 
 async function upsertWorkspaceMember(workspaceId, userId) {
-  // ⚠️ sesuaikan dengan @@unique di schema, mis. workspaceId_userId
+  // sesuai @@unique([workspaceId, userId])
   return prisma.workspaceMember.upsert({
     where: {
       workspaceId_userId: {
@@ -469,7 +469,13 @@ async function main() {
   // 4) Seed entries basic: 1 author, 1 brand, 1 article (published)
   // ——————————————————————————————————
   const entAuthor = await prisma.contentEntry.upsert({
-    where: { slug: "john-doe" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctAuthor.id,
+        slug: "john-doe",
+      },
+    },
     update: { seoTitle: "John Doe", isPublished: true, publishedAt: new Date() },
     create: {
       workspaceId: ws.id,
@@ -484,7 +490,13 @@ async function main() {
   });
 
   const entBrand = await prisma.contentEntry.upsert({
-    where: { slug: "sigma-store" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctBrand.id,
+        slug: "sigma-store",
+      },
+    },
     update: { seoTitle: "Sigma Store", isPublished: true, publishedAt: new Date() },
     create: {
       workspaceId: ws.id,
@@ -499,7 +511,13 @@ async function main() {
   });
 
   const entArticle = await prisma.contentEntry.upsert({
-    where: { slug: "hello-world" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctArticle.id,
+        slug: "hello-world",
+      },
+    },
     update: {
       seoTitle: "Hello World",
       isPublished: true,
@@ -674,7 +692,13 @@ async function main() {
   });
 
   const catRoot = await prisma.contentEntry.upsert({
-    where: { slug: "root-category" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctCategory.id,
+        slug: "root-category",
+      },
+    },
     update: {
       seoTitle: "Root Category",
       isPublished: true,
@@ -693,7 +717,13 @@ async function main() {
   });
 
   const catChild = await prisma.contentEntry.upsert({
-    where: { slug: "child-category" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctCategory.id,
+        slug: "child-category",
+      },
+    },
     update: {
       seoTitle: "Child Category",
       isPublished: true,
@@ -712,7 +742,13 @@ async function main() {
   });
 
   const catGrandchild = await prisma.contentEntry.upsert({
-    where: { slug: "grandchild-category" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctCategory.id,
+        slug: "grandchild-category",
+      },
+    },
     update: {
       seoTitle: "Grandchild Category",
       isPublished: true,
@@ -810,7 +846,13 @@ async function main() {
   });
 
   const tagCms = await prisma.contentEntry.upsert({
-    where: { slug: "tag-cms" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctTag.id,
+        slug: "tag-cms",
+      },
+    },
     update: {
       seoTitle: "CMS",
       isPublished: true,
@@ -829,7 +871,13 @@ async function main() {
   });
 
   const tagBackend = await prisma.contentEntry.upsert({
-    where: { slug: "tag-backend" },
+    where: {
+      workspaceId_contentTypeId_slug: {
+        workspaceId: ws.id,
+        contentTypeId: ctTag.id,
+        slug: "tag-backend",
+      },
+    },
     update: {
       seoTitle: "Backend",
       isPublished: true,

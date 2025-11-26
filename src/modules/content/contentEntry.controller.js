@@ -108,6 +108,19 @@ class ContentEntryController {
       const result = await contentEntryService.create(payload);
       return created(res, result);
     } catch (error) {
+      // 🔴 Khusus konflik slug → 409
+      if (
+        error.code === "SLUG_CONFLICT" ||
+        error.status === 409 ||
+        error.message === "Slug already in use"
+      ) {
+        return next(
+          new ApiError(409, "Slug already in use", {
+            code: "SLUG_CONFLICT",
+          })
+        );
+      }
+
       return next(
         new ApiError(
           error.status || 400,
@@ -140,6 +153,19 @@ class ContentEntryController {
       const result = await contentEntryService.update(id, workspaceId, payload);
       return ok(res, result);
     } catch (error) {
+      // 🔴 Khusus konflik slug → 409
+      if (
+        error.code === "SLUG_CONFLICT" ||
+        error.status === 409 ||
+        error.message === "Slug already in use"
+      ) {
+        return next(
+          new ApiError(409, "Slug already in use", {
+            code: "SLUG_CONFLICT",
+          })
+        );
+      }
+
       return next(
         new ApiError(
           error.status || 400,

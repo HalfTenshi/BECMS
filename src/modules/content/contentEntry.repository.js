@@ -29,6 +29,22 @@ class ContentEntryRepository {
   }
 
   /**
+   * Cek apakah slug sudah dipakai di workspace tertentu.
+   * - excludeId: untuk update (abaikan entry dirinya sendiri)
+   */
+  async isSlugTaken(workspaceId, slug, excludeId) {
+    if (!workspaceId || !slug) return null;
+    return prisma.contentEntry.findFirst({
+      where: {
+        workspaceId,
+        slug,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+  }
+
+  /**
    * Create entry + SEO fields (metaDescription, keywords)
    * NOTE: Normalisasi dan limit 160 char dilakukan di Service,
    * repository menerima data yang sudah beres.

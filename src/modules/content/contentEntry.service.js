@@ -310,6 +310,20 @@ class ContentEntryService {
     if (!finalSlug && data.seoTitle) finalSlug = generateSlug(data.seoTitle);
     if (!finalSlug && generated.slug) finalSlug = generated.slug;
 
+    // 🔒 Cek duplicate slug di workspace
+    if (finalSlug) {
+      const existingSlug = await contentEntryRepository.isSlugTaken(
+        data.workspaceId,
+        finalSlug
+      );
+      if (existingSlug) {
+        const e = new Error("Slug already in use");
+        e.status = 409;
+        e.code = "SLUG_CONFLICT";
+        throw e;
+      }
+    }
+
     const entry = await prisma.$transaction(async (tx) => {
       const created = await tx.contentEntry.create({
         data: {
@@ -376,6 +390,21 @@ class ContentEntryService {
     let finalSlug = data.slug ?? existing.slug ?? null;
     if (!data.slug && data.seoTitle && !existing.slug) {
       finalSlug = generateSlug(data.seoTitle);
+    }
+
+    // 🔒 Cek duplicate slug di workspace (exclude entry ini)
+    if (finalSlug) {
+      const existingSlug = await contentEntryRepository.isSlugTaken(
+        existing.workspaceId,
+        finalSlug,
+        id
+      );
+      if (existingSlug) {
+        const e = new Error("Slug already in use");
+        e.status = 409;
+        e.code = "SLUG_CONFLICT";
+        throw e;
+      }
     }
 
     let fieldValues = [];

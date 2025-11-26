@@ -7,7 +7,7 @@ import prisma from "../../config/prismaClient.js";
  * - ContentField { id, apiKey, name, type: "RELATION", relation: { id, kind, targetContentTypeId } }
  */
 async function getRelationFields({ contentTypeId }) {
-  return prisma.contentField.findMany({
+  const fields = await prisma.contentField.findMany({
     where: { contentTypeId, type: "RELATION" },
     select: {
       id: true,
@@ -22,6 +22,9 @@ async function getRelationFields({ contentTypeId }) {
       },
     },
   });
+
+  // Pastikan hanya yang punya config relation (aman kalau ada field RELATION lama tanpa config)
+  return fields.filter((f) => !!f.relation);
 }
 
 /**
@@ -90,6 +93,7 @@ async function fetchEntrySummaries({ entryIds, summary = "basic" }) {
   if (!entryIds || entryIds.length === 0) return [];
 
   const includeValues = summary === "full";
+
   return prisma.contentEntry.findMany({
     where: { id: { in: entryIds }, isPublished: true },
     orderBy: { publishedAt: "desc" },
@@ -102,7 +106,7 @@ async function fetchEntrySummaries({ entryIds, summary = "basic" }) {
           seoTitle: true,
           metaDescription: true,
           publishedAt: true,
-          contentTypeId: true, // ⬅ penting untuk depth > 1 tanpa query tambahan
+          contentTypeId: true, // penting untuk depth > 1 tanpa query tambahan
         },
   });
 }
@@ -152,6 +156,7 @@ async function expandRelationsDepth1({
     entryIds: Array.from(allTargetIds),
     summary,
   });
+
   const targetById = new Map(targets.map((t) => [t.id, t]));
 
   // Buat index fieldId -> field meta (untuk baca kind & apiKey)

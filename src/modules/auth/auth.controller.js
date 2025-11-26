@@ -1,63 +1,120 @@
+// src/modules/auth/auth.controller.js
 import authService from "./auth.service.js";
+import { ok, created } from "../../utils/response.js";
+import { ApiError } from "../../utils/ApiError.js";
 
 class AuthController {
-  async register(req, res) {
+  // ============================
+  // REGISTER
+  // ============================
+  async register(req, res, next) {
     try {
       const data = await authService.register(req.body);
-      res.status(201).json(data);
+      return created(res, data);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return next(
+        new ApiError(400, e.message || "Failed to register user", {
+          code: "REGISTER_FAILED",
+        })
+      );
     }
   }
 
-  async login(req, res) {
+  // ============================
+  // LOGIN EMAIL-PASSWORD
+  // ============================
+  async login(req, res, next) {
     try {
       const data = await authService.login(req.body);
-      res.json(data);
+      return ok(res, data);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return next(
+        new ApiError(401, e.message || "Invalid login credentials", {
+          code: "LOGIN_FAILED",
+        })
+      );
     }
   }
 
-  async me(req, res) {
-    // req.user disediakan dari middleware auth
+  // ============================
+  // AUTHENTICATED PROFILE /auth/me
+  // ============================
+  async me(req, res, next) {
     try {
-      res.json({ user: req.user.profile });
+      if (!req.user?.profile) {
+        return next(
+          new ApiError(401, "Authentication required", {
+            code: "AUTH_REQUIRED",
+          })
+        );
+      }
+
+      return ok(res, { user: req.user.profile });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return next(
+        new ApiError(400, e.message || "Failed to load profile", {
+          code: "ME_FAILED",
+        })
+      );
     }
   }
 
-  // ========== RESET PASSWORD ==========
-  async requestReset(req, res) {
+  // ============================
+  // REQUEST PASSWORD RESET
+  // ============================
+  async requestReset(req, res, next) {
     try {
       const data = await authService.requestReset(req.body);
-      // selalu { ok: true } untuk anti user-enumeration
-      res.json(data);
+
+      // selalu return ok=true (anti user-enumeration)
+      return ok(res, data);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return next(
+        new ApiError(400, e.message || "Failed to request password reset", {
+          code: "REQUEST_RESET_FAILED",
+        })
+      );
     }
   }
 
-  async resetPassword(req, res) {
+  // ============================
+  // RESET PASSWORD
+  // ============================
+  async resetPassword(req, res, next) {
     try {
       const data = await authService.resetPassword(req.body);
-      res.json(data);
+      return ok(res, data);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return next(
+        new ApiError(400, e.message || "Failed to reset password", {
+          code: "RESET_PASSWORD_FAILED",
+        })
+      );
     }
   }
 
-  // ========== GOOGLE ONE-TAP ==========
-  async googleOneTap(req, res) {
+  // ============================
+  // GOOGLE ONE-TAP LOGIN
+  // ============================
+  async googleOneTap(req, res, next) {
     try {
-      const { idToken } = req.body; // FE kirim credential dari Google
-      if (!idToken) return res.status(400).json({ error: "idToken is required" });
+      const { idToken } = req.body;
+      if (!idToken) {
+        return next(
+          new ApiError(400, "idToken is required", {
+            code: "GOOGLE_IDTOKEN_REQUIRED",
+          })
+        );
+      }
 
       const data = await authService.loginWithGoogleIdToken(idToken);
-      return res.json(data);
+      return ok(res, data);
     } catch (e) {
-      return res.status(401).json({ error: e.message || "Google login failed" });
+      return next(
+        new ApiError(401, e.message || "Google login failed", {
+          code: "GOOGLE_LOGIN_FAILED",
+        })
+      );
     }
   }
 }

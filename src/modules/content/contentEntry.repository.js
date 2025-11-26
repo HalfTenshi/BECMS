@@ -1,7 +1,14 @@
+// src/modules/content/contentEntry.repository.js
 import prisma from "../../config/prismaClient.js";
 
 class ContentEntryRepository {
-  async findAll({ where = {}, include = { contentType: true, values: true }, orderBy = { createdAt: "desc" }, skip, take } = {}) {
+  async findAll({
+    where = {},
+    include = { contentType: true, values: true },
+    orderBy = { createdAt: "desc" },
+    skip,
+    take,
+  } = {}) {
     return prisma.contentEntry.findMany({
       where,
       include,
@@ -11,9 +18,12 @@ class ContentEntryRepository {
     });
   }
 
-  async findById(id, include = { contentType: true, values: true }) {
-    return prisma.contentEntry.findUnique({
-      where: { id },
+  async findById(id, workspaceId, include = { contentType: true, values: true }) {
+    return prisma.contentEntry.findFirst({
+      where: {
+        id,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
       include,
     });
   }
@@ -31,7 +41,7 @@ class ContentEntryRepository {
         slug: data.slug ?? null,
         seoTitle: data.seoTitle ?? null,
         metaDescription: data.metaDescription ?? null, // ≤160 sudah dijaga di service
-        keywords: Array.isArray(data.keywords) ? data.keywords : [], // service sudah normalisasi, di sini berjaga2
+        keywords: Array.isArray(data.keywords) ? data.keywords : [], // backup
         isPublished: !!data.isPublished,
         publishedAt: data.publishedAt ?? null,
         createdById: data.createdById ?? null,
@@ -51,22 +61,27 @@ class ContentEntryRepository {
         seoTitle: data.seoTitle ?? undefined,
         metaDescription: data.metaDescription ?? undefined, // ≤160 sudah dijaga di service
         keywords: Array.isArray(data.keywords) ? data.keywords : undefined,
-        isPublished: typeof data.isPublished === "boolean" ? data.isPublished : undefined,
+        isPublished:
+          typeof data.isPublished === "boolean" ? data.isPublished : undefined,
         publishedAt: data.publishedAt ?? undefined,
         updatedById: data.updatedById ?? undefined,
       },
     });
   }
 
-  async delete(id) {
-    return prisma.contentEntry.delete({ where: { id } });
+  async delete(id, workspaceId) {
+    return prisma.contentEntry.delete({
+      where: { id },
+    });
+    // NOTE: workspaceId sudah di-check di service (findByIdInWorkspace)
   }
 
-  async publish(id) {
+  async publish(id, workspaceId) {
     return prisma.contentEntry.update({
       where: { id },
       data: { isPublished: true, publishedAt: new Date() },
     });
+    // NOTE: workspaceId sudah di-check di service
   }
 }
 
@@ -81,8 +96,8 @@ export default new ContentEntryRepository();
 export async function findManyWithM2mRelated({
   workspaceId,
   contentTypeId,
-  fieldId,            // RELATION field (MANY_TO_MANY)
-  related,            // entryId target
+  fieldId, // RELATION field (MANY_TO_MANY)
+  related, // entryId target
   page = 1,
   pageSize = 20,
   where = {},

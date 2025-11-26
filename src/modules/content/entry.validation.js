@@ -1,3 +1,4 @@
+// src/modules/content/entry.validation.js
 import prisma from "../../config/prismaClient.js";
 
 // Mapping kolom nilai di FieldValue per tipe
@@ -76,8 +77,10 @@ function validateMedia(field, value) {
     return { errors };
   }
 
-  if (urls.length < minFiles) errors.push(`"${field.apiKey}" requires at least ${minFiles} file(s)`);
-  if (urls.length > maxFiles) errors.push(`"${field.apiKey}" exceeds maxFiles=${maxFiles}`);
+  if (urls.length < minFiles)
+    errors.push(`"${field.apiKey}" requires at least ${minFiles} file(s)`);
+  if (urls.length > maxFiles)
+    errors.push(`"${field.apiKey}" exceeds maxFiles=${maxFiles}`);
 
   for (const u of urls) {
     if (typeof u !== "string" || !u.startsWith("/uploads/")) {
@@ -93,7 +96,10 @@ function validateMedia(field, value) {
       }
       if (typeof maxSizeMB === "number" && typeof f?.size === "number") {
         const limit = maxSizeMB * 1024 * 1024;
-        if (f.size > limit) errors.push(`"${field.apiKey}" file too large (> ${maxSizeMB} MB)`);
+        if (f.size > limit)
+          errors.push(
+            `"${field.apiKey}" file too large (> ${maxSizeMB} MB)`
+          );
       }
     }
   }
@@ -157,7 +163,11 @@ export async function enforceOnPayload({
           .replace(/\s+/g, "-")
           .slice(0, 190);
         result.generated[f.apiKey] = slug;
-        result.fieldValues.push({ fieldId: f.id, key: "valueString", value: slug });
+        result.fieldValues.push({
+          fieldId: f.id,
+          key: "valueString",
+          value: slug,
+        });
       }
       continue;
     }
@@ -168,16 +178,22 @@ export async function enforceOnPayload({
     if (f.type === "RELATION") {
       const ids = Array.isArray(v.value) ? v.value : [v.value];
       // filter id kosong
-      const cleanIds = ids.filter((id) => typeof id === "string" && id.trim() !== "");
+      const cleanIds = ids.filter(
+        (id) => typeof id === "string" && id.trim() !== ""
+      );
       if (f.isRequired && cleanIds.length === 0) {
         throw new Error(`Field "${f.apiKey}" is required`);
       }
       // batasi min/maxCount bila ada di config
       if (f?.config?.minCount != null && cleanIds.length < f.config.minCount) {
-        throw new Error(`Field "${f.apiKey}" requires at least ${f.config.minCount} related item(s)`);
+        throw new Error(
+          `Field "${f.apiKey}" requires at least ${f.config.minCount} related item(s)`
+        );
       }
       if (f?.config?.maxCount != null && cleanIds.length > f.config.maxCount) {
-        throw new Error(`Field "${f.apiKey}" exceeds max related item(s): ${f.config.maxCount}`);
+        throw new Error(
+          `Field "${f.apiKey}" exceeds max related item(s): ${f.config.maxCount}`
+        );
       }
       result.relations.push({ fieldId: f.id, targetIds: cleanIds });
       continue;
@@ -188,7 +204,11 @@ export async function enforceOnPayload({
       const { errors, normalizedJson } = validateMedia(f, v.value);
       if (errors.length) throw new Error(errors.join("; "));
       const key = pickValueKey("MEDIA"); // valueJson
-      result.fieldValues.push({ fieldId: f.id, key, value: normalizedJson });
+      result.fieldValues.push({
+        fieldId: f.id,
+        key,
+        value: normalizedJson,
+      });
 
       // Unique untuk MEDIA (berbasis JSON)
       if (f.isUnique) {
@@ -210,15 +230,22 @@ export async function enforceOnPayload({
     if (!key) throw new Error(`Unsupported field type: ${f.type}`);
 
     // Bounds & length
-    if ((f.type === "TEXT" || f.type === "RICH_TEXT" || f.type === "SLUG") && typeof v.value === "string") {
-      if (f.minLength != null && v.value.length < f.minLength) throw new Error(`${f.apiKey} length < minLength`);
-      if (f.maxLength != null && v.value.length > f.maxLength) throw new Error(`${f.apiKey} length > maxLength`);
+    if (
+      (f.type === "TEXT" || f.type === "RICH_TEXT" || f.type === "SLUG") &&
+      typeof v.value === "string"
+    ) {
+      if (f.minLength != null && v.value.length < f.minLength)
+        throw new Error(`${f.apiKey} length < minLength`);
+      if (f.maxLength != null && v.value.length > f.maxLength)
+        throw new Error(`${f.apiKey} length > maxLength`);
     }
     if (f.type === "NUMBER") {
       const num = Number(v.value);
       if (Number.isNaN(num)) throw new Error(`${f.apiKey} must be a number`);
-      if (f.minNumber != null && num < f.minNumber) throw new Error(`${f.apiKey} < minNumber`);
-      if (f.maxNumber != null && num > f.maxNumber) throw new Error(`${f.apiKey} > maxNumber`);
+      if (f.minNumber != null && num < f.minNumber)
+        throw new Error(`${f.apiKey} < minNumber`);
+      if (f.maxNumber != null && num > f.maxNumber)
+        throw new Error(`${f.apiKey} > maxNumber`);
     }
     if (f.type === "DATE" && v.value) {
       const d = new Date(v.value);
@@ -229,7 +256,9 @@ export async function enforceOnPayload({
       try {
         JSON.parse(String(v.value));
       } catch {
-        throw new Error(`${f.apiKey} must be an object/array or valid JSON string`);
+        throw new Error(
+          `${f.apiKey} must be an object/array or valid JSON string`
+        );
       }
     }
 
@@ -240,8 +269,6 @@ export async function enforceOnPayload({
         ...(entryId ? { entryId: { not: entryId } } : {}),
       };
 
-      // Untuk JSON kita langsung bandingkan JSON
-      // Untuk STRING/NUMBER/BOOLEAN/DATE: pakai kolom spesifik
       const exist = await prisma.fieldValue.findFirst({
         where: {
           ...whereBase,
@@ -252,7 +279,11 @@ export async function enforceOnPayload({
       if (exist) throw new Error(`${f.apiKey} must be unique`);
     }
 
-    result.fieldValues.push({ fieldId: f.id, key, value: v.value });
+    result.fieldValues.push({
+      fieldId: f.id,
+      key,
+      value: v.value,
+    });
   }
 
   return result;

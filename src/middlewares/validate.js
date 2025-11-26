@@ -1,14 +1,16 @@
 // src/middlewares/validate.js
 import { validationResult } from "express-validator";
+import { ApiError } from "../utils/ApiError.js";
 
 export function validate(req, res, next) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({
-      status: "error",
-      message: "Validation failed",
-      errors: errors.array(),
-    });
+    return next(
+      new ApiError(400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: errors.array(),
+      })
+    );
   }
   next();
 }

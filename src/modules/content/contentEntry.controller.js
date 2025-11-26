@@ -1,21 +1,64 @@
+// src/modules/content/contentEntry.controller.js
 import contentEntryService from "./contentEntry.service.js";
+import { ok, created, noContent } from "../../utils/response.js";
+import { ApiError } from "../../utils/ApiError.js";
 
 class ContentEntryController {
   // ===================== READ =====================
-  async getAll(req, res) {
+  async getAll(req, res, next) {
     try {
-      const result = await contentEntryService.getAll();
-      res.json(result);
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
+
+      const {
+        contentTypeId,
+        contentType, // apiKey
+        search = "",
+        isPublished,
+        page = 1,
+        pageSize = 20,
+      } = req.query;
+
+      const result = await contentEntryService.getAll(workspaceId, {
+        contentTypeId,
+        contentTypeApiKey: contentType,
+        search,
+        isPublished,
+        page: Number(page),
+        pageSize: Number(pageSize),
+      });
+
+      return ok(res, result);
     } catch (error) {
-      res.status(500).json({ message: error.message });
+      return next(
+        new ApiError(
+          error.status || 500,
+          error.message || "Failed to fetch content entries",
+          { code: "CONTENT_ENTRY_LIST_FAILED" }
+        )
+      );
     }
   }
 
-  async getById(req, res) {
+  async getById(req, res, next) {
     try {
       const { id } = req.params;
       const { include = "", depth = 0 } = req.query;
-      const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
+      const workspaceId = req.workspaceId || req.workspace?.id;
+
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
 
       // Jika client meminta include=relations/depth, gunakan service khusus
       if (include) {
@@ -27,95 +70,154 @@ class ContentEntryController {
           depth: Number(depth) || 0,
           scope,
         });
-        return res.json(result);
+        return ok(res, result);
       }
 
-      // Fallback perilaku lama
-      const result = await contentEntryService.getById(id);
-      res.json(result);
+      const result = await contentEntryService.getById(id, workspaceId);
+      return ok(res, result);
     } catch (error) {
-      res.status(404).json({ message: error.message });
+      return next(
+        new ApiError(
+          error.status || 404,
+          error.message || "Entry not found",
+          { code: "CONTENT_ENTRY_NOT_FOUND" }
+        )
+      );
     }
   }
 
   // ===================== WRITE =====================
-  /**
-   * Body contoh:
-   * {
-   *   "contentTypeId": "<ct-id>",
-   *   "values": [{ "apiKey": "title", "value": "Hello" }],
-   *   "seoTitle": "Judul SEO",
-   *   "metaDescription": "Ringkasan maksimal 160 karakter",
-   *   "keywords": ["cms","seo"] // atau "cms,seo"
-   *   "slug": "judul-seo",
-   *   "isPublished": false,
-   *   "publishedAt": null
-   * }
-   */
-  async create(req, res) {
+  async create(req, res, next) {
     try {
-      const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
 
-      // Pastikan field SEO ikut diteruskan
       const payload = {
         ...req.body,
         workspaceId,
-        // metaDescription & keywords akan dinormalisasi di service (≤160, array)
+        metaDescription: req.body?.metaDescription,
+        keywords: req.body?.keywords, // string atau array, dinormalisasi di service
+      };
+
+      const result = await contentEntryService.create(payload);
+      return created(res, result);
+    } catch (error) {
+      return next(
+        new ApiError(
+          error.status || 400,
+          error.message || "Failed to create entry",
+          { code: "CONTENT_ENTRY_CREATE_FAILED" }
+        )
+      );
+    }
+  }
+
+  async update(req, res, next) {
+    try {
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
+
+      const { id } = req.params;
+
+      const payload = {
+        ...req.body,
         metaDescription: req.body?.metaDescription,
         keywords: req.body?.keywords,
       };
 
-      const result = await contentEntryService.create(payload);
-      res.status(201).json(result);
+      const result = await contentEntryService.update(id, workspaceId, payload);
+      return ok(res, result);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      return next(
+        new ApiError(
+          error.status || 400,
+          error.message || "Failed to update entry",
+          { code: "CONTENT_ENTRY_UPDATE_FAILED" }
+        )
+      );
     }
   }
 
-  async update(req, res) {
+  async delete(req, res, next) {
     try {
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
+
       const { id } = req.params;
-
-      // Pastikan field SEO ikut diteruskan saat update juga
-      const payload = {
-        ...req.body,
-        metaDescription: req.body?.metaDescription,
-        keywords: req.body?.keywords, // boleh array atau "a,b,c" (service akan normalisasi)
-      };
-
-      const result = await contentEntryService.update(id, payload);
-      res.json(result);
+      await contentEntryService.delete(id, workspaceId);
+      return noContent(res);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      const status = error.message === "Entry not found" ? 404 : 400;
+      const code =
+        error.message === "Entry not found"
+          ? "CONTENT_ENTRY_NOT_FOUND"
+          : "CONTENT_ENTRY_DELETE_FAILED";
+
+      return next(new ApiError(status, error.message || "Failed to delete", { code }));
     }
   }
 
-  async delete(req, res) {
+  async publish(req, res, next) {
     try {
-      const { id } = req.params;
-      await contentEntryService.delete(id);
-      res.json({ message: "Entry deleted" });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  }
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
 
-  async publish(req, res) {
-    try {
       const { id } = req.params;
-      const result = await contentEntryService.publish(id);
-      res.json({ message: "Published successfully", result });
+      const result = await contentEntryService.publish(id, workspaceId);
+      return ok(res, {
+        message: "Published successfully",
+        result,
+      });
     } catch (error) {
-      res.status(500).json({ message: error.message });
+      const status = error.message === "Entry not found" ? 404 : 400;
+      const code =
+        error.message === "Entry not found"
+          ? "CONTENT_ENTRY_NOT_FOUND"
+          : "CONTENT_ENTRY_PUBLISH_FAILED";
+
+      return next(new ApiError(status, error.message || "Failed to publish", { code }));
     }
   }
 
   // ===================== UTIL / RELATION =====================
-  // ✅ Listing entries per ContentType + filter relasi M2M (fieldId + related)
+
+  // Listing entries per ContentType + filter relasi M2M
   // GET /api/admin/content/:contentType/entries?fieldId=&related=&page=&pageSize=
-  async listByContentType(req, res) {
+  async listByContentType(req, res, next) {
     try {
-      const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
+
       const { contentType } = req.params; // apiKey ContentType
       const { fieldId, related, page = 1, pageSize = 20 } = req.query;
 
@@ -128,18 +230,32 @@ class ContentEntryController {
         pageSize,
       });
 
-      res.json(result);
+      return ok(res, result);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      return next(
+        new ApiError(
+          error.status || 400,
+          error.message || "Failed to list entries by contentType",
+          { code: "CONTENT_ENTRY_LIST_BY_TYPE_FAILED" }
+        )
+      );
     }
   }
 
   // 🔎 Util search (public & admin)
   // GET /api/content/:contentType/search
   // GET /api/admin/content/:contentType/search
-  async searchForRelation(req, res) {
+  async searchForRelation(req, res, next) {
     try {
-      const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
+      const workspaceId = req.workspaceId || req.workspace?.id;
+      if (!workspaceId) {
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
+      }
+
       const { contentType } = req.params;
       const {
         q = "",
@@ -160,9 +276,15 @@ class ContentEntryController {
         scope,
       });
 
-      res.json(out);
+      return ok(res, out);
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      return next(
+        new ApiError(
+          error.status || 400,
+          error.message || "Failed to search entries for relation",
+          { code: "CONTENT_ENTRY_SEARCH_FAILED" }
+        )
+      );
     }
   }
 }

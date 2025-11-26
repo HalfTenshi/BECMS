@@ -82,13 +82,15 @@ class ContentRelationM2mRepository {
   async detachMany({ relationFieldId, fromEntryId, toEntryIds = [] }) {
     if (!toEntryIds.length) return { count: 0 };
 
-    return prisma.contentRelationM2M.deleteMany({
+    const result = await prisma.contentRelationM2M.deleteMany({
       where: {
         relationFieldId,
         fromEntryId,
         toEntryId: { in: toEntryIds },
       },
     });
+
+    return { count: result.count };
   }
 
   async clear({ relationFieldId, fromEntryId }) {

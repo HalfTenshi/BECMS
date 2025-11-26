@@ -56,15 +56,25 @@ enum PermissionAction {
 enum ModuleKey {
   AUTH
   USERS
+  WORKSPACES
   ROLES
-  CONTENT_MODELS
+  PERMISSIONS
+
+  CONTENT_TYPES
+  CONTENT_FIELDS
   CONTENT_ENTRIES
   CONTENT_RELATIONS
   CONTENT_SEO
-  SUBSCRIPTION
+
+  PLANS
+  SUBSCRIPTIONS
   BILLING
-  PRODUCT
-  BRAND
+
+  PRODUCTS
+  BRANDS
+
+  ASSETS
+  UPLOADS
 }
 
 /// =======================
@@ -205,8 +215,10 @@ model Role {
 model Permission {
   id          String          @id @default(cuid())
   workspaceId String
+  name        String
   module      ModuleKey
   action      PermissionAction
+  description String?         // ⬅️ DITAMBAHKAN (supaya cocok dengan seed.js)
 
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   rolePerms   RolePermission[]

@@ -1,4 +1,6 @@
+// src/middlewares/authorize.js
 import prisma from "../config/prismaClient.js";
+import { ApiError } from "../utils/ApiError.js";
 
 /**
  * authorize(requiredAction, requiredModule)
@@ -19,11 +21,20 @@ export function authorize(requiredActionOrPairs, requiredModule) {
       // 1) Cek user
       const user = req.user;
       if (!user?.id) {
-        return res.status(401).json({ error: "Unauthorized" });
+        return next(
+          new ApiError(401, "Authentication required", {
+            code: "AUTH_REQUIRED",
+          })
+        );
       }
+
       // (Opsional) blokir status user tertentu
       if (user.status && ["SUSPENDED", "DEACTIVATED"].includes(user.status)) {
-        return res.status(403).json({ error: "Account is not active" });
+        return next(
+          new ApiError(403, "Account is not active", {
+            code: "ACCOUNT_INACTIVE",
+          })
+        );
       }
 
       // 2) Ambil workspaceId dari beberapa sumber
@@ -33,7 +44,11 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         req.headers["x-workspace-id"];
 
       if (!workspaceId) {
-        return res.status(400).json({ error: "workspaceId missing" });
+        return next(
+          new ApiError(400, "workspaceId is required", {
+            code: "WORKSPACE_REQUIRED",
+          })
+        );
       }
 
       // 3) Cache per request (hindari query ganda)
@@ -55,7 +70,13 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         }),
       ]);
 
-      if (!ws) return res.status(404).json({ error: "Workspace not found" });
+      if (!ws) {
+        return next(
+          new ApiError(404, "Workspace not found", {
+            code: "WORKSPACE_NOT_FOUND",
+          })
+        );
+      }
 
       // 5) Owner bypass
       if (ws.ownerId === user.id) {
@@ -65,7 +86,11 @@ export function authorize(requiredActionOrPairs, requiredModule) {
 
       // 6) Harus punya role di workspace
       if (!membership?.roleId) {
-        return res.status(403).json({ error: "Forbidden" });
+        return next(
+          new ApiError(403, "You do not have permission to access this workspace", {
+            code: "FORBIDDEN_NO_ROLE",
+          })
+        );
       }
 
       // 7) Build OR-query untuk semua pasangan + wildcard
@@ -89,15 +114,24 @@ export function authorize(requiredActionOrPairs, requiredModule) {
       });
 
       if (!has) {
-        return res.status(403).json({ error: "Forbidden" });
+        return next(
+          new ApiError(403, "You do not have permission to access this resource", {
+            code: "FORBIDDEN",
+          })
+        );
       }
 
       // 8) Simpan cache sukses dan lanjut
       req._permCache.set(cacheKey, true);
       return next();
     } catch (err) {
-      // Log internal bila perlu: console.error(err)
-      return res.status(500).json({ error: "Internal Server Error" });
+      console.error("authorize() error:", err);
+
+      return next(
+        new ApiError(500, "Internal Server Error", {
+          code: "INTERNAL_SERVER_ERROR",
+        })
+      );
     }
   };
 }

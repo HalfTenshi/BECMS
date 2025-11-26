@@ -1,3 +1,4 @@
+// src/modules/content/contentEntry.service.js
 import contentEntryRepository, { findManyWithM2mRelated } from "./contentEntry.repository.js";
 import prisma from "../../config/prismaClient.js";
 import { generateSlug } from "../../utils/slugGenerator.js";
@@ -27,31 +28,107 @@ class ContentEntryService {
   }
 
   // ===================== READ =====================
-  async getAll() {
-    return await contentEntryRepository.findAll();
+
+  /**
+   * Listing entries per workspace dengan optional filter:
+   * - contentTypeId atau contentTypeApiKey
+   * - search (seoTitle/slug contains)
+   * - isPublished
+   * - pagination
+   */
+  async getAll(
+    workspaceId,
+    {
+      contentTypeId,
+      contentTypeApiKey,
+      search = "",
+      isPublished,
+      page = 1,
+      pageSize = 20,
+    } = {}
+  ) {
+    if (!workspaceId) throw new Error("workspaceId is required");
+
+    const where = { workspaceId };
+
+    // resolve contentType by apiKey kalau perlu
+    let finalContentTypeId = contentTypeId;
+    if (!finalContentTypeId && contentTypeApiKey) {
+      const ct = await prisma.contentType.findFirst({
+        where: { workspaceId, apiKey: contentTypeApiKey },
+        select: { id: true },
+      });
+      if (!ct) {
+        const e = new Error("ContentType not found");
+        e.status = 404;
+        throw e;
+      }
+      finalContentTypeId = ct.id;
+    }
+    if (finalContentTypeId) where.contentTypeId = finalContentTypeId;
+
+    if (isPublished === "true") where.isPublished = true;
+    if (isPublished === "false") where.isPublished = false;
+
+    if (search && String(search).trim() !== "") {
+      where.OR = [
+        { seoTitle: { contains: search, mode: "insensitive" } },
+        { slug: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const skip = (Number(page) - 1) * Number(pageSize);
+    const take = Number(pageSize);
+
+    const [items, total] = await Promise.all([
+      contentEntryRepository.findAll({
+        where,
+        include: { contentType: true, values: true },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.contentEntry.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page: Number(page),
+      pageSize: Number(pageSize),
+      pages: Math.max(1, Math.ceil(total / Number(pageSize))),
+    };
   }
 
-  async getById(id) {
-    const entry = await contentEntryRepository.findById(id);
-    if (!entry) throw new Error("Entry not found");
+  async getById(id, workspaceId) {
+    const entry = await contentEntryRepository.findById(id, workspaceId);
+    if (!entry) {
+      const e = new Error("Entry not found");
+      e.status = 404;
+      throw e;
+    }
     return entry;
   }
 
-  // ✅ getById dengan dukungan include=relations & depth
   /**
-   * @param {Object} params
-   * @param {string} params.id
-   * @param {string} params.workspaceId
-   * @param {string} [params.include=""]
-   * @param {number} [params.depth=0]
-   * @param {"admin"|"public"} [params.scope="admin"]
+   * Detail dengan include relations & depth (admin/public)
    */
-  async getByIdWithInclude({ id, workspaceId, include = "", depth = 0, scope = "admin" }) {
+  async getByIdWithInclude({
+    id,
+    workspaceId,
+    include = "",
+    depth = 0,
+    scope = "admin",
+  }) {
     const entry = await prisma.contentEntry.findFirst({
       where: { id, workspaceId },
       include: { contentType: true, values: true },
     });
-    if (!entry) throw new Error("Entry not found");
+    if (!entry) {
+      const e = new Error("Entry not found");
+      e.status = 404;
+      throw e;
+    }
 
     if (include === "relations") {
       const relFields = await prisma.contentField.findMany({
@@ -89,11 +166,11 @@ class ContentEntryService {
       if (Number(depth) >= 1) {
         const flatIds = [...new Set(Object.values(map).flat())];
         if (flatIds.length) {
-          const where = { id: { in: flatIds } };
-          if (scope === "public") where.isPublished = true;
+          const whereTargets = { id: { in: flatIds } };
+          if (scope === "public") whereTargets.isPublished = true;
 
           const targets = await prisma.contentEntry.findMany({
-            where,
+            where: whereTargets,
             select: {
               id: true,
               slug: true,
@@ -105,7 +182,9 @@ class ContentEntryService {
           });
           const tmap = Object.fromEntries(targets.map((t) => [t.id, t]));
           for (const k of Object.keys(entry.relations)) {
-            entry.relations[k] = entry.relations[k].map((tid) => tmap[tid]).filter(Boolean);
+            entry.relations[k] = entry.relations[k]
+              .map((tid) => tmap[tid])
+              .filter(Boolean);
           }
         }
       }
@@ -120,7 +199,11 @@ class ContentEntryService {
       where: { workspaceId, apiKey: contentTypeApiKey },
       select: { id: true },
     });
-    if (!ct) throw new Error("ContentType not found");
+    if (!ct) {
+      const e = new Error("ContentType not found");
+      e.status = 404;
+      throw e;
+    }
     return ct.id;
   }
 
@@ -134,11 +217,16 @@ class ContentEntryService {
     sort = "publishedAt:desc",
     scope = "public",
   }) {
-    const contentTypeId = await this._resolveCTIdOrThrow(workspaceId, contentTypeApiKey);
+    const contentTypeId = await this._resolveCTIdOrThrow(
+      workspaceId,
+      contentTypeApiKey
+    );
 
     const skip = (Number(page) - 1) * Number(pageSize);
     const [sortField, sortDir] = (sort || "publishedAt:desc").split(":");
-    const orderBy = [{ [sortField || "publishedAt"]: (sortDir || "desc").toLowerCase() }];
+    const orderBy = [
+      { [sortField || "publishedAt"]: (sortDir || "desc").toLowerCase() },
+    ];
 
     const where = {
       workspaceId,
@@ -187,7 +275,11 @@ class ContentEntryService {
       where: { workspaceId, apiKey: contentTypeApiKey },
       select: { id: true },
     });
-    if (!ct) throw new Error("ContentType not found");
+    if (!ct) {
+      const e = new Error("ContentType not found");
+      e.status = 404;
+      throw e;
+    }
 
     return findManyWithM2mRelated({
       workspaceId,
@@ -200,16 +292,6 @@ class ContentEntryService {
   }
 
   // ===================== CREATE =====================
-  /**
-   * data:
-   * {
-   *   workspaceId: string,
-   *   contentTypeId: string,
-   *   values: [{ apiKey, value }],
-   *   slug?, seoTitle?, metaDescription?, keywords?, isPublished?, publishedAt?,
-   *   createdById?, updatedById?
-   * }
-   */
   async create(data) {
     if (!data.workspaceId || !data.contentTypeId) {
       throw new Error("workspaceId and contentTypeId required");
@@ -280,17 +362,13 @@ class ContentEntryService {
   }
 
   // ===================== UPDATE =====================
-  /**
-   * data:
-   * {
-   *   values?: [{ apiKey, value }],
-   *   slug?, seoTitle?, metaDescription?, keywords?, isPublished?, publishedAt?,
-   *   updatedById?
-   * }
-   */
-  async update(id, data) {
-    const existing = await contentEntryRepository.findById(id);
-    if (!existing) throw new Error("Entry not found");
+  async update(id, workspaceId, data) {
+    const existing = await contentEntryRepository.findById(id, workspaceId);
+    if (!existing) {
+      const e = new Error("Entry not found");
+      e.status = 404;
+      throw e;
+    }
 
     // Normalisasi SEO (limit 160 & keywords → array)
     data = this._normalizeSeoInput(data);
@@ -322,7 +400,9 @@ class ContentEntryService {
           metaDescription: data.metaDescription ?? existing.metaDescription, // ≤160 dijaga
           keywords: data.keywords ?? existing.keywords,
           isPublished:
-            typeof data.isPublished === "boolean" ? data.isPublished : existing.isPublished,
+            typeof data.isPublished === "boolean"
+              ? data.isPublished
+              : existing.isPublished,
           publishedAt: data.publishedAt ?? existing.publishedAt,
           updatedById: data.updatedById ?? existing.updatedById,
         },
@@ -376,12 +456,26 @@ class ContentEntryService {
   }
 
   // ===================== DELETE / PUBLISH =====================
-  async delete(id) {
-    return await contentEntryRepository.delete(id);
+  async delete(id, workspaceId) {
+    const existing = await contentEntryRepository.findById(id, workspaceId);
+    if (!existing) {
+      const e = new Error("Entry not found");
+      e.status = 404;
+      throw e;
+    }
+    await contentEntryRepository.delete(id, workspaceId);
+    return { message: "Entry deleted" };
   }
 
-  async publish(id) {
-    return await contentEntryRepository.publish(id);
+  async publish(id, workspaceId) {
+    const existing = await contentEntryRepository.findById(id, workspaceId);
+    if (!existing) {
+      const e = new Error("Entry not found");
+      e.status = 404;
+      throw e;
+    }
+    const updated = await contentEntryRepository.publish(id, workspaceId);
+    return updated;
   }
 }
 

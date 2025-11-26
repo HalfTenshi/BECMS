@@ -5,6 +5,7 @@ import cors from "cors";
 import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
+import { errorHandler } from "./middlewares/errorHandler.js";
 
 import prisma from "./config/prismaClient.js";
 import router from "./routes/index.js";
@@ -45,15 +46,7 @@ app.use("/api", (req, res, next) => {
   return res.status(404).json({ message: "API route not found" });
 });
 
-// ——— error handler (wajib di akhir)
-app.use((err, req, res, next) => {
-  const status = err.status || err.statusCode || 500;
-  const payload = { message: err.message || "Internal Server Error" };
-  if (process.env.NODE_ENV !== "production") payload.stack = err.stack;
-  console.error("🔥 Error:", err);
-  res.status(status).json(payload);
-});
-
+app.use(errorHandler);
 // ✅ Start server
 async function startServer() {
   try {

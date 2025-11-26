@@ -1,10 +1,14 @@
 // src/routes/contentRelationM2m.routes.js
 import express from "express";
 import service from "../modules/content/contentRelationM2m.service.js";
+import { auth } from "../middlewares/auth.js";
 import { workspaceContext } from "../middlewares/workspace.js";
 import { authorize } from "../middlewares/authorize.js";
 
 const router = express.Router();
+
+// Proteksi dasar: semua endpoint di sini butuh auth + workspace
+router.use(auth, workspaceContext);
 
 /**
  * POST /content/relations/m2m/attach
@@ -16,8 +20,7 @@ const router = express.Router();
  */
 router.post(
   "/content/relations/m2m/attach",
-  workspaceContext,
-  authorize("CONTENT", "UPDATE"),
+  authorize("UPDATE", "CONTENT_RELATIONS"),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -58,8 +61,7 @@ router.post(
  */
 router.delete(
   "/content/relations/m2m/detach",
-  workspaceContext,
-  authorize("CONTENT", "UPDATE"),
+  authorize("UPDATE", "CONTENT_RELATIONS"),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -98,8 +100,7 @@ router.delete(
  */
 router.patch(
   "/content/relations/m2m/:fieldId/:fromEntryId/reorder",
-  workspaceContext,
-  authorize("CONTENT", "UPDATE"),
+  authorize("UPDATE", "CONTENT_RELATIONS"),
   async (req, res, next) => {
     try {
       const { fieldId, fromEntryId } = req.params;
@@ -134,8 +135,7 @@ router.patch(
  */
 router.get(
   "/content/relations/m2m/list",
-  workspaceContext,
-  authorize("CONTENT", "READ"),
+  authorize("READ", "CONTENT_RELATIONS"),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -175,8 +175,7 @@ router.get(
  */
 router.get(
   "/content/relations/m2m/from-by-related",
-  workspaceContext,
-  authorize("CONTENT", "READ"),
+  authorize("READ", "CONTENT_RELATIONS"),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;

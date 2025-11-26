@@ -2,13 +2,329 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+// Import ACTIONS & MODULE_KEYS dari permissions.js
+import { ACTIONS, MODULE_KEYS } from "../src/constants/permissions.js";
+
 const prisma = new PrismaClient();
+
+// ---------------------------------------------------------------
+// ROLE & PERMISSION CONFIG
+// ---------------------------------------------------------------
+
+const ROLE_KEYS = {
+  OWNER: "OWNER",
+  ADMIN: "ADMIN",
+  EDITOR: "EDITOR",
+  VIEWER: "VIEWER",
+  SEO_SPECIALIST: "SEO_SPECIALIST",
+};
+
+// Semua permission yang mau dibuat
+const PERMISSION_DEFINITIONS = [
+  // USERS
+  { module: MODULE_KEYS.USERS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.USERS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.USERS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.USERS, action: ACTIONS.DELETE },
+
+  // WORKSPACES
+  { module: MODULE_KEYS.WORKSPACES, action: ACTIONS.READ },
+  { module: MODULE_KEYS.WORKSPACES, action: ACTIONS.UPDATE },
+
+  // ROLES & PERMISSIONS
+  { module: MODULE_KEYS.ROLES, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.ROLES, action: ACTIONS.READ },
+  { module: MODULE_KEYS.ROLES, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.ROLES, action: ACTIONS.DELETE },
+
+  { module: MODULE_KEYS.PERMISSIONS, action: ACTIONS.READ },
+
+  // CONTENT TYPES
+  { module: MODULE_KEYS.CONTENT_TYPES, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.CONTENT_TYPES, action: ACTIONS.READ },
+  { module: MODULE_KEYS.CONTENT_TYPES, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.CONTENT_TYPES, action: ACTIONS.DELETE },
+
+  // CONTENT FIELDS
+  { module: MODULE_KEYS.CONTENT_FIELDS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.CONTENT_FIELDS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.CONTENT_FIELDS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.CONTENT_FIELDS, action: ACTIONS.DELETE },
+
+  // CONTENT ENTRIES
+  { module: MODULE_KEYS.CONTENT_ENTRIES, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.CONTENT_ENTRIES, action: ACTIONS.READ },
+  { module: MODULE_KEYS.CONTENT_ENTRIES, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.CONTENT_ENTRIES, action: ACTIONS.DELETE },
+  { module: MODULE_KEYS.CONTENT_ENTRIES, action: ACTIONS.PUBLISH },
+
+  // CONTENT RELATIONS
+  { module: MODULE_KEYS.CONTENT_RELATIONS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.CONTENT_RELATIONS, action: ACTIONS.UPDATE },
+
+  // CONTENT SEO
+  { module: MODULE_KEYS.CONTENT_SEO, action: ACTIONS.READ },
+  { module: MODULE_KEYS.CONTENT_SEO, action: ACTIONS.UPDATE },
+
+  // PLANS
+  { module: MODULE_KEYS.PLANS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.PLANS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.PLANS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.PLANS, action: ACTIONS.DELETE },
+
+  // PRODUCTS
+  { module: MODULE_KEYS.PRODUCTS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.PRODUCTS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.PRODUCTS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.PRODUCTS, action: ACTIONS.DELETE },
+
+  // BRANDS
+  { module: MODULE_KEYS.BRANDS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.BRANDS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.BRANDS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.BRANDS, action: ACTIONS.DELETE },
+
+  // ASSETS & UPLOADS
+  { module: MODULE_KEYS.ASSETS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.ASSETS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.ASSETS, action: ACTIONS.UPDATE },
+  { module: MODULE_KEYS.ASSETS, action: ACTIONS.DELETE },
+
+  { module: MODULE_KEYS.UPLOADS, action: ACTIONS.CREATE },
+  { module: MODULE_KEYS.UPLOADS, action: ACTIONS.READ },
+  { module: MODULE_KEYS.UPLOADS, action: ACTIONS.DELETE },
+];
+
+// Role → permission matrix
+const ROLE_PERMISSION_MATRIX = {
+  [ROLE_KEYS.OWNER]: "ALL", // khusus: dapat semua
+
+  [ROLE_KEYS.ADMIN]: [
+    { module: MODULE_KEYS.USERS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    { module: MODULE_KEYS.WORKSPACES, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    { module: MODULE_KEYS.ROLES, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    { module: MODULE_KEYS.PERMISSIONS, actions: [ACTIONS.READ] },
+
+    { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.CONTENT_ENTRIES,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE, ACTIONS.PUBLISH],
+    },
+    { module: MODULE_KEYS.CONTENT_RELATIONS, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+
+    { module: MODULE_KEYS.PLANS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+
+    { module: MODULE_KEYS.PRODUCTS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    { module: MODULE_KEYS.BRANDS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+
+    {
+      module: MODULE_KEYS.ASSETS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
+    { module: MODULE_KEYS.UPLOADS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.DELETE] },
+  ],
+
+  [ROLE_KEYS.EDITOR]: [
+    { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.READ] },
+
+    {
+      module: MODULE_KEYS.CONTENT_ENTRIES,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.PUBLISH],
+    },
+    { module: MODULE_KEYS.CONTENT_RELATIONS, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+
+    {
+      module: MODULE_KEYS.ASSETS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE],
+    },
+    { module: MODULE_KEYS.UPLOADS, actions: [ACTIONS.CREATE, ACTIONS.READ] },
+  ],
+
+  [ROLE_KEYS.VIEWER]: [
+    { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_ENTRIES, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_RELATIONS, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.ASSETS, actions: [ACTIONS.READ] },
+  ],
+
+  [ROLE_KEYS.SEO_SPECIALIST]: [
+    { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.READ] },
+    { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.READ] },
+
+    { module: MODULE_KEYS.CONTENT_ENTRIES, actions: [ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.PUBLISH] },
+    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+
+    { module: MODULE_KEYS.ASSETS, actions: [ACTIONS.READ] },
+  ],
+};
+
+// ---------------------------------------------------------------
+// HELPER RBAC
+// ---------------------------------------------------------------
+
+async function upsertWorkspaceMember(workspaceId, userId) {
+  // ⚠️ sesuaikan dengan @@unique di schema, mis. workspaceId_userId
+  return prisma.workspaceMember.upsert({
+    where: {
+      workspaceId_userId: {
+        workspaceId,
+        userId,
+      },
+    },
+    update: {},
+    create: {
+      workspaceId,
+      userId,
+    },
+  });
+}
+
+async function seedPermissions(workspaceId) {
+  const permissionRecords = {};
+
+  for (const def of PERMISSION_DEFINITIONS) {
+    const key = `${def.module}:${def.action}`;
+
+    const perm = await prisma.permission.upsert({
+      where: {
+        workspaceId_module_action: {
+          workspaceId,
+          module: def.module,
+          action: def.action,
+        },
+      },
+      update: {},
+      create: {
+        workspaceId,
+        module: def.module,
+        action: def.action,
+        name: key,
+        description: `${def.action} on ${def.module}`,
+      },
+    });
+
+    permissionRecords[key] = perm;
+  }
+
+  return permissionRecords;
+}
+
+async function seedRoles(workspaceId) {
+  const roleRecords = {};
+
+  for (const roleName of Object.values(ROLE_KEYS)) {
+    const role = await prisma.role.upsert({
+      where: {
+        workspaceId_name: {
+          workspaceId,
+          name: roleName,
+        },
+      },
+      update: {},
+      create: {
+        workspaceId,
+        name: roleName,
+        description: `${roleName} role`,
+      },
+    });
+
+    roleRecords[roleName] = role;
+  }
+
+  return roleRecords;
+}
+
+async function seedRolePermissions(workspaceId, roles, permissionsMap) {
+  for (const [roleName, rule] of Object.entries(ROLE_PERMISSION_MATRIX)) {
+    const role = roles[roleName];
+    if (!role) continue;
+
+    if (rule === "ALL") {
+      for (const perm of Object.values(permissionsMap)) {
+        await prisma.rolePermission.upsert({
+          where: {
+            roleId_permissionId: {
+              roleId: role.id,
+              permissionId: perm.id,
+            },
+          },
+          update: {},
+          create: {
+            roleId: role.id,
+            permissionId: perm.id,
+          },
+        });
+      }
+      continue;
+    }
+
+    for (const entry of rule) {
+      for (const action of entry.actions) {
+        const key = `${entry.module}:${action}`;
+        const perm = permissionsMap[key];
+        if (!perm) continue;
+
+        await prisma.rolePermission.upsert({
+          where: {
+            roleId_permissionId: {
+              roleId: role.id,
+              permissionId: perm.id,
+            },
+          },
+          update: {},
+          create: {
+            roleId: role.id,
+            permissionId: perm.id,
+          },
+        });
+      }
+    }
+  }
+}
+
+async function attachOwnerRoleToMember(roles, workspace, user) {
+  const ownerRole = roles[ROLE_KEYS.OWNER];
+  if (!ownerRole) return;
+
+  // Kalau schema workspace punya ownerId:
+  try {
+    await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { ownerId: user.id },
+    });
+  } catch (e) {
+    // kalau tidak ada field ownerId, aman di-skip
+  }
+
+  // Update WorkspaceMember → set role OWNER
+  await prisma.workspaceMember.update({
+    where: {
+      workspaceId_userId: {
+        workspaceId: workspace.id,
+        userId: user.id,
+      },
+    },
+    data: {
+      roleId: ownerRole.id,
+    },
+  });
+}
+
+// ---------------------------------------------------------------
+// MAIN
+// ---------------------------------------------------------------
 
 async function main() {
   // ——————————————————————————————————
   // 0) Owner user (punya password beneran)
   // ——————————————————————————————————
-  const plainPassword = "password_kamu"; // ← ini yang dipakai untuk login
+  const plainPassword = "password_kamu"; // TODO: ganti di env / jangan commit ke production
   const passwordHash = await bcrypt.hash(plainPassword, 10);
 
   const owner = await prisma.user.upsert({
@@ -37,6 +353,15 @@ async function main() {
       ownerId: owner.id,
     },
   });
+
+  // ——————————————————————————————————
+  // 1.1) RBAC untuk workspace + owner
+  // ——————————————————————————————————
+  await upsertWorkspaceMember(ws.id, owner.id);
+  const permissionsMap = await seedPermissions(ws.id);
+  const roles = await seedRoles(ws.id);
+  await seedRolePermissions(ws.id, roles, permissionsMap);
+  await attachOwnerRoleToMember(roles, ws, owner);
 
   // ——————————————————————————————————
   // 2) ContentTypes: author, brand, article
@@ -81,10 +406,7 @@ async function main() {
   });
 
   // ——————————————————————————————————
-  // 3) Fields untuk ARTICLE (lama)
-  //     - title (TEXT, required)
-  //     - author (RELATION -> ctAuthor, MANY_TO_ONE)
-  //     - brand  (RELATION -> ctBrand,  MANY_TO_ONE)
+  // 3) Fields untuk ARTICLE
   // ——————————————————————————————————
   const fldTitle = await prisma.contentField.upsert({
     where: { contentTypeId_apiKey: { contentTypeId: ctArticle.id, apiKey: "title" } },
@@ -123,7 +445,6 @@ async function main() {
     },
   });
 
-  // RelationConfig untuk field relasi lama
   await prisma.relationConfig.upsert({
     where: { fieldId: fldAuthor.id },
     update: { kind: "MANY_TO_ONE", targetContentTypeId: ctAuthor.id },
@@ -222,7 +543,6 @@ async function main() {
       fieldId: fldAuthor.id,
       fromEntryId: entArticle.id,
       toEntryId: entAuthor.id,
-      // position default 0 (boleh dikosongin karena default di schema)
     },
   });
 
@@ -245,10 +565,9 @@ async function main() {
   });
 
   // =====================================================================
-  // 5) TAMBAHAN UNTUK TESTING POIN 1–4 (MULTI-DEPTH, O2M/M2O, M2M)
+  // 5) Tambahan untuk testing multi-depth & M2M
   // =====================================================================
 
-  // 5.1 ContentType tambahan: category, tag
   const ctCategory = await prisma.contentType.upsert({
     where: { workspaceId_apiKey: { workspaceId: ws.id, apiKey: "category" } },
     update: {},
@@ -275,9 +594,6 @@ async function main() {
     },
   });
 
-  // 5.2 Fields untuk CATEGORY:
-  //     - name (TEXT)
-  //     - parent (RELATION -> category, MANY_TO_ONE)
   const fldCategoryName = await prisma.contentField.upsert({
     where: { contentTypeId_apiKey: { contentTypeId: ctCategory.id, apiKey: "name" } },
     update: { name: "Name", type: "TEXT", isRequired: true, position: 1 },
@@ -313,9 +629,6 @@ async function main() {
     },
   });
 
-  // 5.3 Fields tambahan di ARTICLE:
-  //     - category (RELATION -> category, MANY_TO_ONE)
-  //     - tags     (RELATION -> tag, MANY_TO_MANY)
   const fldArticleCategory = await prisma.contentField.upsert({
     where: { contentTypeId_apiKey: { contentTypeId: ctArticle.id, apiKey: "category" } },
     update: { name: "Category", type: "RELATION", position: 4 },
@@ -360,7 +673,6 @@ async function main() {
     },
   });
 
-  // 5.4 Seed kategori: root → child → grandchild (buat depth test)
   const catRoot = await prisma.contentEntry.upsert({
     where: { slug: "root-category" },
     update: {
@@ -418,7 +730,6 @@ async function main() {
     },
   });
 
-  // Value: name untuk kategori
   await prisma.fieldValue.upsert({
     where: { entryId_fieldId: { entryId: catRoot.id, fieldId: fldCategoryName.id } },
     update: { valueString: "Root Category" },
@@ -447,8 +758,6 @@ async function main() {
     },
   });
 
-  // Relasi CATEGORY → parent (self MANY_TO_ONE) untuk depth:
-  // grandchild -> child, child -> root
   await prisma.contentRelation.upsert({
     where: {
       fieldId_fromEntryId_toEntryId: {
@@ -483,7 +792,6 @@ async function main() {
     },
   });
 
-  // 5.5 Relasi ARTICLE → CATEGORY (MANY_TO_ONE)
   await prisma.contentRelation.upsert({
     where: {
       fieldId_fromEntryId_toEntryId: {
@@ -501,7 +809,6 @@ async function main() {
     },
   });
 
-  // 5.6 Seed TAGs + relasi M2M (ARTICLE → TAG)
   const tagCms = await prisma.contentEntry.upsert({
     where: { slug: "tag-cms" },
     update: {
@@ -540,8 +847,6 @@ async function main() {
     },
   });
 
-  // Relasi M2M: ARTICLE "hello-world" memiliki dua tag: [cms, backend]
-  // (position default 0; kalau mau tes reorder, nanti via endpoint PATCH)
   await prisma.contentRelationM2M.upsert({
     where: {
       uniq_m2m_rel_triple: {
@@ -556,7 +861,6 @@ async function main() {
       relationFieldId: fldArticleTags.id,
       fromEntryId: entArticle.id,
       toEntryId: tagCms.id,
-      // position default 0 di schema
     },
   });
 

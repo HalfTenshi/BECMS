@@ -1,48 +1,47 @@
+// src/routes/admin/content.admin.routes.js
 import express from "express";
 import contentTypeController from "../../modules/content/contentType.controller.js";
 import contentEntryController from "../../modules/content/contentEntry.controller.js";
 import { auth } from "../../middlewares/auth.js";
-import { workspaceContext } from "../../middlewares/workspace.js";
+import workspaceContext from "../../middlewares/workspaceContext.js";
 import { authorize } from "../../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../../constants/permissions.js";
 
 const r = express.Router();
 
+// Middleware global untuk semua route admin content
+r.use(auth, workspaceContext);
+
 // =======================
-// 📘 Content Types (CONTENT_MODELS)
+// 📘 Content Types (CONTENT_TYPES)
 // =======================
 r.get(
   "/types",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_MODELS"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_TYPES),
   contentTypeController.getAll
 );
+
 r.get(
   "/types/:id",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_MODELS"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_TYPES),
   contentTypeController.getById
 );
+
 r.post(
   "/types",
-  auth,
-  workspaceContext,
-  authorize("CREATE", "CONTENT_MODELS"),
+  authorize(ACTIONS.CREATE, RESOURCES.CONTENT_TYPES),
   contentTypeController.create
 );
+
 r.put(
   "/types/:id",
-  auth,
-  workspaceContext,
-  authorize("UPDATE", "CONTENT_MODELS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_TYPES),
   contentTypeController.update
 );
+
 r.delete(
   "/types/:id",
-  auth,
-  workspaceContext,
-  authorize("DELETE", "CONTENT_MODELS"),
+  authorize(ACTIONS.DELETE, RESOURCES.CONTENT_TYPES),
   contentTypeController.delete
 );
 
@@ -51,44 +50,37 @@ r.delete(
 // =======================
 r.get(
   "/entries",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.getAll
 );
+
 r.get(
   "/entries/:id",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.getById
 );
+
 r.post(
   "/entries",
-  auth,
-  workspaceContext,
-  authorize("CREATE", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.CREATE, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.create
 );
+
 r.put(
   "/entries/:id",
-  auth,
-  workspaceContext,
-  authorize("UPDATE", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.update
 );
+
 r.patch(
   "/entries/:id/publish",
-  auth,
-  workspaceContext,
-  authorize("PUBLISH", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.PUBLISH, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.publish
 );
+
 r.delete(
   "/entries/:id",
-  auth,
-  workspaceContext,
-  authorize("DELETE", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.DELETE, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.delete
 );
 
@@ -98,17 +90,15 @@ r.delete(
 // GET /api/admin/content/:contentType/entries?fieldId=<REL_FIELD_ID>&related=<ENTRY_ID>&page=1&pageSize=10
 r.get(
   "/:contentType/entries",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.listByContentType
 );
+
 // 🔎 util search (admin scope)
 r.get(
   "/:contentType/search",
-  auth,
-  workspaceContext,
-  authorize("READ", "CONTENT_ENTRIES"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_ENTRIES),
   contentEntryController.searchForRelation
 );
+
 export default r;

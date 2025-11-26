@@ -9,6 +9,8 @@ const router = express.Router();
 
 // 🔒 Semua endpoint user butuh auth + workspace + RBAC
 router.use(auth, workspaceContext);
+ 
+router.get("/me", userController.me);
 
 // List users (search, status, page, limit)
 router.get(

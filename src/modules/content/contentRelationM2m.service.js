@@ -95,7 +95,7 @@ class ContentRelationM2mService {
     assert(from && from.workspaceId === workspaceId, "From entry not found in workspace");
 
     if (!toEntryIds.length) {
-      return { ok: true, attached: [], message: "No target ids provided" };
+      return [];
     }
 
     // Pastikan semua target ada & punya contentType sesuai targetContentTypeId

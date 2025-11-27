@@ -4,6 +4,7 @@ import service from "../modules/content/contentRelationM2m.service.js";
 import { auth } from "../middlewares/auth.js";
 import { workspaceContext } from "../middlewares/workspace.js";
 import { authorize } from "../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.use(auth, workspaceContext);
  */
 router.post(
   "/content/relations/m2m/attach",
-  authorize("UPDATE", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -61,7 +62,7 @@ router.post(
  */
 router.delete(
   "/content/relations/m2m/detach",
-  authorize("UPDATE", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -100,7 +101,7 @@ router.delete(
  */
 router.patch(
   "/content/relations/m2m/:fieldId/:fromEntryId/reorder",
-  authorize("UPDATE", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const { fieldId, fromEntryId } = req.params;
@@ -135,7 +136,7 @@ router.patch(
  */
 router.get(
   "/content/relations/m2m/list",
-  authorize("READ", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -175,7 +176,7 @@ router.get(
  */
 router.get(
   "/content/relations/m2m/from-by-related",
-  authorize("READ", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;

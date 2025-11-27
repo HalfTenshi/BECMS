@@ -2,6 +2,7 @@ import express from "express";
 import { auth } from "../../middlewares/auth.js";
 import { workspaceGuard as workspaceContext } from "../../middlewares/workspaceContext.js";
 import { authorize } from "../../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../../modules/rbac/rbac.constants.js";
 import prisma from "../../config/prismaClient.js";
 import { recomputeDenormForRelationField } from "../../services/denorm.service.js";
 
@@ -17,7 +18,7 @@ router.use(auth, workspaceContext);
  */
 router.post(
   "/:fieldId/attach",
-  authorize("UPDATE", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res) => {
     try {
       const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
@@ -67,7 +68,7 @@ router.post(
  */
 router.post(
   "/:fieldId/detach",
-  authorize("UPDATE", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res) => {
     try {
       const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];
@@ -112,7 +113,7 @@ router.post(
  */
 router.get(
   "/:fieldId/:fromEntryId",
-  authorize("READ", "CONTENT_RELATIONS"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res) => {
     try {
       const workspaceId = req.workspace?.id || req.headers["x-workspace-id"];

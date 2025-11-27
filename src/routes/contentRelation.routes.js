@@ -3,6 +3,7 @@ import express from "express";
 import service from "../modules/content/contentRelation/contentRelation.service.js";
 import { workspaceContext } from "../middlewares/workspace.js";
 import { authorize } from "../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ const router = express.Router();
 router.post(
   "/content/relations/attach",
   workspaceContext,
-  authorize("CONTENT", "UPDATE"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -25,7 +26,8 @@ router.post(
 
       if (!workspaceId || !fieldId || !fromEntryId || !toEntryId) {
         return res.status(400).json({
-          message: "workspaceId (via context), fieldId, fromEntryId, toEntryId required",
+          message:
+            "workspaceId (via context), fieldId, fromEntryId, toEntryId required",
         });
       }
 
@@ -52,7 +54,7 @@ router.post(
 router.delete(
   "/content/relations/detach",
   workspaceContext,
-  authorize("CONTENT", "UPDATE"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const { id } = req.body;
@@ -78,12 +80,14 @@ router.delete(
 router.get(
   "/content/relations/list",
   workspaceContext,
-  authorize("CONTENT", "READ"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const { fieldId, fromEntryId } = req.query;
       if (!fieldId || !fromEntryId) {
-        return res.status(400).json({ message: "fieldId & fromEntryId required" });
+        return res
+          .status(400)
+          .json({ message: "fieldId & fromEntryId required" });
       }
 
       const rows = await service.list({
@@ -113,7 +117,7 @@ router.get(
 router.get(
   "/content/relations/from-by-related",
   workspaceContext,
-  authorize("CONTENT", "READ"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const workspaceId = req.workspace?.id;
@@ -121,7 +125,8 @@ router.get(
 
       if (!workspaceId || !fieldId || !relatedEntryId) {
         return res.status(400).json({
-          message: "workspaceId (via context), fieldId, relatedEntryId required",
+          message:
+            "workspaceId (via context), fieldId, relatedEntryId required",
         });
       }
 
@@ -149,7 +154,7 @@ router.get(
 router.patch(
   "/content/relations/:fieldId/:fromEntryId/reorder",
   workspaceContext,
-  authorize("CONTENT", "UPDATE"), // sesuai gaya kamu
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS), // sesuai gaya kamu
   async (req, res, next) => {
     try {
       const { fieldId, fromEntryId } = req.params;

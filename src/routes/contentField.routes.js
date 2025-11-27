@@ -4,6 +4,7 @@ import contentFieldController from "../modules/content/contentField.controller.j
 import { auth } from "../middlewares/auth.js";
 import { workspaceContext } from "../middlewares/workspace.js";
 import { authorize } from "../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
 
 const router = express.Router({ mergeParams: true });
 // base path akan dimount di: /api/content/types/:contentTypeId/fields
@@ -15,7 +16,7 @@ router.use(auth, workspaceContext);
 // GET /api/content/types/:contentTypeId/fields
 router.get(
   "/",
-  authorize("CONTENT_MODELS", "READ"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_FIELDS),
   contentFieldController.list
 );
 
@@ -23,7 +24,7 @@ router.get(
 // GET /api/content/types/:contentTypeId/fields/:fieldId
 router.get(
   "/:fieldId",
-  authorize("CONTENT_MODELS", "READ"),
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_FIELDS),
   contentFieldController.detail
 );
 
@@ -31,7 +32,7 @@ router.get(
 // POST /api/content/types/:contentTypeId/fields
 router.post(
   "/",
-  authorize("CONTENT_MODELS", "CREATE"),
+  authorize(ACTIONS.CREATE, RESOURCES.CONTENT_FIELDS),
   contentFieldController.create
 );
 
@@ -39,7 +40,7 @@ router.post(
 // PUT /api/content/types/:contentTypeId/fields/:fieldId
 router.put(
   "/:fieldId",
-  authorize("CONTENT_MODELS", "UPDATE"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_FIELDS),
   contentFieldController.update
 );
 
@@ -47,7 +48,7 @@ router.put(
 // DELETE /api/content/types/:contentTypeId/fields/:fieldId
 router.delete(
   "/:fieldId",
-  authorize("CONTENT_MODELS", "DELETE"),
+  authorize(ACTIONS.DELETE, RESOURCES.CONTENT_FIELDS),
   contentFieldController.remove
 );
 
@@ -55,7 +56,7 @@ router.delete(
 // PATCH /api/content/types/:contentTypeId/fields/reorder
 router.patch(
   "/reorder",
-  authorize("CONTENT_MODELS", "UPDATE"),
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_FIELDS),
   contentFieldController.reorder
 );
 

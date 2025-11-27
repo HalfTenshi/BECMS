@@ -1,24 +1,6 @@
-export const MODULE_KEYS = {
-  AUTH: "AUTH",
+// src/constants/modules.js
 
-  USERS: "USERS",
-  WORKSPACES: "WORKSPACES",
-  ROLES: "ROLES",
-  PERMISSIONS: "PERMISSIONS",
+// Deprecated: gunakan src/modules/rbac/rbac.constants.js untuk kode baru.
+// Alias untuk kode lama.
 
-  CONTENT_TYPES: "CONTENT_TYPES",
-  CONTENT_FIELDS: "CONTENT_FIELDS",
-  CONTENT_ENTRIES: "CONTENT_ENTRIES",
-  CONTENT_RELATIONS: "CONTENT_RELATIONS",
-  CONTENT_SEO: "CONTENT_SEO",
-
-  PLANS: "PLANS",
-  SUBSCRIPTIONS: "SUBSCRIPTIONS",
-  BILLING: "BILLING",
-
-  PRODUCTS: "PRODUCTS",
-  BRANDS: "BRANDS",
-
-  ASSETS: "ASSETS",
-  UPLOADS: "UPLOADS",
-};
+export { MODULE_KEYS } from "./permissions.js";

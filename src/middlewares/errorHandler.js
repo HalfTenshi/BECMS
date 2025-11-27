@@ -29,6 +29,11 @@ export function errorHandler(err, req, res, next) {
       detail: err.message || "Unexpected error",
       instance: req.originalUrl,
       errors: err.details || undefined,
+
+      // Tambahan field untuk debugging / observability / RBAC
+      reason: err.reason || undefined,
+      action: err.action || undefined,
+      resource: err.resource || undefined,
     },
   };
 

@@ -24,6 +24,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         return next(
           new ApiError(401, "Authentication required", {
             code: "AUTH_REQUIRED",
+            reason: "AUTH_REQUIRED",
           })
         );
       }
@@ -33,6 +34,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         return next(
           new ApiError(403, "Account is not active", {
             code: "ACCOUNT_INACTIVE",
+            reason: "ACCOUNT_INACTIVE",
           })
         );
       }
@@ -47,6 +49,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         return next(
           new ApiError(400, "workspaceId is required", {
             code: "WORKSPACE_REQUIRED",
+            reason: "WORKSPACE_REQUIRED",
           })
         );
       }
@@ -74,6 +77,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         return next(
           new ApiError(404, "Workspace not found", {
             code: "WORKSPACE_NOT_FOUND",
+            reason: "WORKSPACE_NOT_FOUND",
           })
         );
       }
@@ -89,6 +93,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
         return next(
           new ApiError(403, "You do not have permission to access this workspace", {
             code: "FORBIDDEN_NO_ROLE",
+            reason: "RBAC_NO_ROLE_IN_WORKSPACE",
           })
         );
       }
@@ -114,9 +119,15 @@ export function authorize(requiredActionOrPairs, requiredModule) {
       });
 
       if (!has) {
+        // Ambil pasangan pertama untuk dilaporkan di error
+        const [firstAction, firstModule] = pairs[0] || [];
+
         return next(
           new ApiError(403, "You do not have permission to access this resource", {
-            code: "FORBIDDEN",
+            code: "FORBIDDEN_NO_PERMISSION",
+            reason: "RBAC_CHECK_FAILED",
+            action: firstAction,
+            resource: firstModule,
           })
         );
       }
@@ -130,6 +141,7 @@ export function authorize(requiredActionOrPairs, requiredModule) {
       return next(
         new ApiError(500, "Internal Server Error", {
           code: "INTERNAL_SERVER_ERROR",
+          reason: "UNEXPECTED_ERROR",
         })
       );
     }

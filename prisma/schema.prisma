@@ -81,41 +81,53 @@ enum ModuleKey {
 }
 
 /// =======================
+/// Subscription lifecycle
+/// =======================
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+/// =======================
 /// Multi-tenant boundary
 /// =======================
 model Workspace {
-  id                  String             @id @default(cuid())
-  name                String
-  slug                String             @unique
-  ownerId             String
-  owner               User               @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
-  planId              String?
-  plan                Plan?              @relation(fields: [planId], references: [id])
+  id      String  @id @default(cuid())
+  name    String
+  slug    String  @unique
+  ownerId String
+  owner   User    @relation("UserOwnsWorkspaces", fields: [ownerId], references: [id])
+  planId  String?
+  plan    Plan?   @relation(fields: [planId], references: [id])
 
-  members             WorkspaceMember[]
-  roles               Role[]
-  permissions         Permission[]
-  contentTypes        ContentType[]
-  entries             ContentEntry[]
-  products            Product[]
-  brands              Brand[]
-  contentRelations    ContentRelation[]
-  productCategories   ProductCategory[]
+  members           WorkspaceMember[]
+  roles             Role[]
+  permissions       Permission[]
+  contentTypes      ContentType[]
+  entries           ContentEntry[]
+  products          Product[]
+  brands            Brand[]
+  contentRelations  ContentRelation[]
+  productCategories ProductCategory[]
 
   // back-relation untuk ContentRelationM2M.workspace
   contentRelationsM2M ContentRelationM2M[]
 
   // back-relation untuk Asset.workspace
-  assets              Asset[]
+  assets Asset[]
 
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  // back-relation untuk Subscription.workspace
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([slug])
 }
 
 model WorkspaceMember {
-  id          String    @id @default(cuid())
+  id          String  @id @default(cuid())
   workspaceId String
   userId      String
   roleId      String?
@@ -133,29 +145,29 @@ model WorkspaceMember {
 /// Auth & Users
 /// =======================
 model User {
-  id               String          @id @default(cuid())
-  email            String          @unique
-  passwordHash     String?
-  name             String
-  pictureUrl       String?
-  status           AccountStatus   @default(ACTIVE)
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String?
+  name         String
+  pictureUrl   String?
+  status       AccountStatus @default(ACTIVE)
 
-  accounts         Account[]
-  sessions         Session[]
-  workspaces       WorkspaceMember[]
-  workspacesOwned  Workspace[]     @relation("UserOwnsWorkspaces")
+  accounts        Account[]
+  sessions        Session[]
+  workspaces      WorkspaceMember[]
+  workspacesOwned Workspace[]       @relation("UserOwnsWorkspaces")
 
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdEntries   ContentEntry[]  @relation("EntryCreatedBy")
-  updatedEntries   ContentEntry[]  @relation("EntryUpdatedBy")
+  createdEntries ContentEntry[] @relation("EntryCreatedBy")
+  updatedEntries ContentEntry[] @relation("EntryUpdatedBy")
 
   // back-relation untuk PasswordResetToken.user
   passwordResetTokens PasswordResetToken[]
 
   // back-relation untuk Asset.createdBy
-  createdAssets     Asset[]
+  createdAssets Asset[]
 }
 
 model Account {
@@ -184,12 +196,12 @@ model Session {
 
 /// Token reset password
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -200,42 +212,42 @@ model PasswordResetToken {
 /// RBAC (Roles & Permissions)
 /// =======================
 model Role {
-  id           String          @id @default(cuid())
-  workspaceId  String
-  name         String
-  description  String?
+  id          String  @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
 
-  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  rolePerms    RolePermission[]
-  members      WorkspaceMember[]
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rolePerms RolePermission[]
+  members   WorkspaceMember[]
 
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([workspaceId, name])
 }
 
 model Permission {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   workspaceId String
   name        String
   module      ModuleKey
   action      PermissionAction
   description String?
 
-  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  rolePerms   RolePermission[]
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rolePerms RolePermission[]
 
   @@unique([workspaceId, module, action])
 }
 
 model RolePermission {
-  id            String      @id @default(cuid())
-  roleId        String
-  permissionId  String
+  id           String @id @default(cuid())
+  roleId       String
+  permissionId String
 
-  role          Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission    Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
 }
@@ -255,100 +267,100 @@ model ContentType {
   targetedByConfigs RelationConfig[] @relation("TargetCT")
   seoEnabled        Boolean          @default(true)
 
-  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@unique([workspaceId, apiKey])
   @@unique([workspaceId, name])
 }
 
 model ContentField {
-  id             String             @id @default(cuid())
-  contentTypeId  String
-  name           String
-  apiKey         String
-  type           FieldType
-  isRequired     Boolean            @default(false)
-  isUnique       Boolean            @default(false)
-  position       Int                @default(0)
+  id            String    @id @default(cuid())
+  contentTypeId String
+  name          String
+  apiKey        String
+  type          FieldType
+  isRequired    Boolean   @default(false)
+  isUnique      Boolean   @default(false)
+  position      Int       @default(0)
 
-  minLength      Int?
-  maxLength      Int?
-  minNumber      Float?
-  maxNumber      Float?
-  slugFrom       String?
-  config         Json?
+  minLength Int?
+  maxLength Int?
+  minNumber Float?
+  maxNumber Float?
+  slugFrom  String?
+  config    Json?
 
-  relation       RelationConfig?
+  relation RelationConfig?
 
-  contentType    ContentType        @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
-  values         FieldValue[]       @relation("FieldToValues")
-  relations      ContentRelation[]  @relation("FieldToRelations")
-  m2mRelations   ContentRelationM2M[]
+  contentType  ContentType          @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+  values       FieldValue[]         @relation("FieldToValues")
+  relations    ContentRelation[]    @relation("FieldToRelations")
+  m2mRelations ContentRelationM2M[]
 
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([contentTypeId, apiKey])
 }
 
 model RelationConfig {
-  id                   String        @id @default(cuid())
-  fieldId              String        @unique
-  kind                 RelationKind
-  targetContentTypeId  String
+  id                  String       @id @default(cuid())
+  fieldId             String       @unique
+  kind                RelationKind
+  targetContentTypeId String
 
-  field             ContentField  @relation(fields: [fieldId], references: [id], onDelete: Cascade)
-  targetContentType ContentType   @relation("TargetCT", fields: [targetContentTypeId], references: [id])
+  field             ContentField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  targetContentType ContentType  @relation("TargetCT", fields: [targetContentTypeId], references: [id])
 }
 
 /// =======================
 /// Content Entries + Values + Relations
 /// =======================
 model ContentEntry {
-  id              String        @id @default(cuid())
+  id              String    @id @default(cuid())
   workspaceId     String
   contentTypeId   String
   slug            String?
   seoTitle        String?
-  metaDescription String?       @db.VarChar(160)
-  keywords        String[]      @default([])
-  isPublished     Boolean       @default(false)
+  metaDescription String?   @db.VarChar(160)
+  keywords        String[]  @default([])
+  isPublished     Boolean   @default(false)
   publishedAt     DateTime?
 
-  createdById   String?
-  updatedById   String?
-  createdBy     User?        @relation("EntryCreatedBy", fields: [createdById], references: [id])
-  updatedBy     User?        @relation("EntryUpdatedBy", fields: [updatedById], references: [id])
+  createdById String?
+  updatedById String?
+  createdBy   User?   @relation("EntryCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?   @relation("EntryUpdatedBy", fields: [updatedById], references: [id])
 
-  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  contentType   ContentType  @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentType ContentType @relation(fields: [contentTypeId], references: [id], onDelete: Cascade)
 
-  values        FieldValue[]
-  outgoingRels  ContentRelation[] @relation("FromEntry")
-  incomingRels  ContentRelation[] @relation("ToEntry")
+  values       FieldValue[]
+  outgoingRels ContentRelation[] @relation("FromEntry")
+  incomingRels ContentRelation[] @relation("ToEntry")
 
   m2mFromRelations ContentRelationM2M[] @relation("M2M_FromEntry")
   m2mToRelations   ContentRelationM2M[] @relation("M2M_ToEntry")
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  @@unique([workspaceId, contentTypeId, slug])
   @@index([workspaceId, contentTypeId])
   @@index([isPublished, publishedAt])
-  @@unique([workspaceId, contentTypeId, slug])
 }
 
 model FieldValue {
-  id            String       @id @default(cuid())
-  entryId       String
-  fieldId       String
-  valueString   String?
-  valueNumber   Float?
-  valueBoolean  Boolean?
-  valueDate     DateTime?
-  valueJson     Json?
+  id           String    @id @default(cuid())
+  entryId      String
+  fieldId      String
+  valueString  String?
+  valueNumber  Float?
+  valueBoolean Boolean?
+  valueDate    DateTime?
+  valueJson    Json?
 
   entry ContentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   field ContentField @relation("FieldToValues", fields: [fieldId], references: [id], onDelete: Cascade)
@@ -362,12 +374,12 @@ model FieldValue {
 }
 
 model ContentRelation {
-  id          String       @id @default(cuid())
+  id          String @id @default(cuid())
   workspaceId String
   fieldId     String
   fromEntryId String
   toEntryId   String
-  position    Int          @default(0)
+  position    Int    @default(0)
 
   workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   field     ContentField @relation("FieldToRelations", fields: [fieldId], references: [id], onDelete: Cascade)
@@ -386,39 +398,61 @@ model ContentRelation {
 /// M2M Relations
 /// =======================
 model ContentRelationM2M {
-  id               String   @id @default(cuid())
-  workspaceId      String
-  relationFieldId  String
-  fromEntryId      String
-  toEntryId        String
-  position         Int      @default(0)
-  createdAt        DateTime @default(now())
+  id              String   @id @default(cuid())
+  workspaceId     String
+  relationFieldId String
+  fromEntryId     String
+  toEntryId       String
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
 
   workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   relationField ContentField @relation(fields: [relationFieldId], references: [id], onDelete: Cascade)
   fromEntry     ContentEntry @relation("M2M_FromEntry", fields: [fromEntryId], references: [id], onDelete: Cascade)
-  toEntry       ContentEntry @relation("M2M_ToEntry",   fields: [toEntryId], references: [id], onDelete: Cascade)
+  toEntry       ContentEntry @relation("M2M_ToEntry", fields: [toEntryId], references: [id], onDelete: Cascade)
 
   @@unique([relationFieldId, fromEntryId, toEntryId], name: "uniq_m2m_rel_triple")
   @@index([relationFieldId, fromEntryId], name: "idx_m2m_by_from")
-  @@index([relationFieldId, toEntryId],   name: "idx_m2m_by_to")
-  @@index([workspaceId],                  name: "idx_m2m_ws")
+  @@index([relationFieldId, toEntryId], name: "idx_m2m_by_to")
+  @@index([workspaceId], name: "idx_m2m_ws")
   @@index([relationFieldId, fromEntryId, position], name: "idx_m2m_order")
 }
 
 /// =======================
 /// Subscriptions (SaaS)
 /// =======================
+model Subscription {
+  id          String             @id @default(cuid())
+  workspaceId String
+  planId      String
+  status      SubscriptionStatus @default(ACTIVE)
+
+  startedAt   DateTime  @default(now())
+  cancelledAt DateTime?
+  expiredAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      Plan      @relation(fields: [planId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workspaceId, status])
+}
+
 model Plan {
-  id               String   @id @default(cuid())
-  name             String   @unique
-  monthlyPrice     Int      @default(0)
-  yearlyPrice      Int      @default(0)
-  maxMembers       Int?
-  maxContentTypes  Int?
-  maxEntries       Int?
+  id              String @id @default(cuid())
+  name            String @unique
+  monthlyPrice    Int    @default(0)
+  yearlyPrice     Int    @default(0)
+  maxMembers      Int?
+  maxContentTypes Int?
+  maxEntries      Int?
 
   workspaces Workspace[]
+
+  // back-relations
+  subscriptions Subscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -428,10 +462,10 @@ model Plan {
 /// Example: Product / Brand
 /// =======================
 model Brand {
-  id          String    @id @default(cuid())
+  id          String  @id @default(cuid())
   workspaceId String
   name        String
-  slug        String    @unique
+  slug        String  @unique
   description String?
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -444,27 +478,27 @@ model Brand {
 }
 
 model ProductCategory {
-  id          String    @id @default(cuid())
+  id          String @id @default(cuid())
   workspaceId String
   name        String
-  slug        String    @unique
+  slug        String @unique
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  products    Product[]
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products  Product[]
 
   @@unique([workspaceId, name])
 }
 
 model Product {
-  id            String            @id @default(cuid())
-  workspaceId   String
-  name          String
-  slug          String            @unique
-  price         Int               @default(0)
-  sku           String?           @unique
-  description   String?
-  brandId       String?
-  categoryId    String?
+  id          String  @id @default(cuid())
+  workspaceId String
+  name        String
+  slug        String  @unique
+  price       Int     @default(0)
+  sku         String? @unique
+  description String?
+  brandId     String?
+  categoryId  String?
 
   workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   brand     Brand?           @relation(fields: [brandId], references: [id])
@@ -472,10 +506,10 @@ model Product {
 
   seoTitle        String?
   metaDescription String?
-  keywords        String[]      @default([])
+  keywords        String[] @default([])
 
-  isPublished  Boolean  @default(false)
-  publishedAt  DateTime?
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -504,11 +538,11 @@ model Asset {
   tags         String[] @default([])
   folder       String?
 
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy    User?     @relation(fields: [createdById], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id])
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([workspaceId])
   @@index([mime])

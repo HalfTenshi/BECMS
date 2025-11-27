@@ -29,14 +29,20 @@ class ContentEntryRepository {
   }
 
   /**
-   * Cek apakah slug sudah dipakai di workspace tertentu.
+   * Cek apakah slug sudah dipakai di workspace + contentType tertentu.
+   *
+   * - enforce unik per (workspaceId, contentTypeId, slug),
+   *   sesuai dengan constraint Prisma:
+   *     @@unique([workspaceId, contentTypeId, slug])
+   *
    * - excludeId: untuk update (abaikan entry dirinya sendiri)
    */
-  async isSlugTaken(workspaceId, slug, excludeId) {
-    if (!workspaceId || !slug) return null;
+  async isSlugTaken(workspaceId, contentTypeId, slug, excludeId) {
+    if (!workspaceId || !contentTypeId || !slug) return null;
     return prisma.contentEntry.findFirst({
       where: {
         workspaceId,
+        contentTypeId,
         slug,
         ...(excludeId ? { id: { not: excludeId } } : {}),
       },
@@ -98,6 +104,26 @@ class ContentEntryRepository {
       data: { isPublished: true, publishedAt: new Date() },
     });
     // NOTE: workspaceId sudah di-check di service
+  }
+
+  /**
+   * Bulk clear SEO fields untuk semua entry pada ContentType tertentu di workspace tertentu.
+   * Dipanggil ketika ContentType.seoEnabled dimatikan (true → false).
+   */
+  async clearSeoFieldsByContentType(workspaceId, contentTypeId) {
+    if (!workspaceId || !contentTypeId) return { count: 0 };
+
+    return prisma.contentEntry.updateMany({
+      where: {
+        workspaceId,
+        contentTypeId,
+      },
+      data: {
+        seoTitle: null,
+        metaDescription: null,
+        keywords: [],
+      },
+    });
   }
 }
 

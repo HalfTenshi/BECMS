@@ -1,7 +1,7 @@
 // src/routes/index.js
 import express from "express";
 
-// Core/auth
+// Core / Auth
 import authRoutes from "./auth.routes.js";
 import userRoutes from "./user.routes.js";
 import workspaceRoutes from "./workspace.routes.js";
@@ -14,6 +14,7 @@ import brandRoutes from "./brand.routes.js";
 import productRoutes from "./product.routes.js";
 import contentRoutes from "./content.routes.js";
 import contentFieldRoutes from "./contentField.routes.js";
+import subscriptionRoutes from "./subscription.routes.js";
 
 // Admin (protected per-file)
 import contentAdminRoutes from "./admin/content.admin.routes.js";
@@ -21,9 +22,10 @@ import brandAdminRoutes from "./admin/brand.admin.routes.js";
 import productAdminRoutes from "./admin/product.admin.routes.js";
 import planAdminRoutes from "./admin/plan.admin.routes.js";
 import m2mAdminRoutes from "./admin/content.m2m.admin.routes.js";
-import denormAdmin from "./admin/content.denorm.routes.js";
+import denormAdminRoutes from "./admin/content.denorm.routes.js";
+import billingAdminRoutes from "./admin/billing.routes.js";
 
-// 🔹 RELATION routers (NON-M2M & M2M)
+// Relations (NON-M2M & M2M)
 import contentRelationRoutes from "./contentRelation.routes.js";
 import contentRelationM2mRoutes from "./contentRelationM2m.routes.js";
 
@@ -32,17 +34,20 @@ import contentPublicRoutes from "./public/content.public.routes.js";
 import docsRoutes from "./docs.routes.js";
 import uploadRoutes from "./upload.routes.js";
 
-// (opsional) debug
+// Webhooks
+import billingWebhookRoutes from "./billing.webhook.routes.js";
+
+// Debug (opsional)
 import debugRelationsRoutes from "./debug.relations.routes.js";
 import debugContentTypesRoutes from "./debug.contentTypes.routes.js";
 
 const router = express.Router();
 
-// --- Debug routes ---
+// --- Debug routes (sebaiknya dibatasi di non-production) ---
 router.use("/debug", debugRelationsRoutes);
 router.use("/debug", debugContentTypesRoutes);
 
-// --- Auth dulu (login/register/reset) ---
+// --- Auth (login/register/reset) ---
 router.use("/auth", authRoutes);
 
 // --- Core (protected via middleware di masing-masing file) ---
@@ -57,17 +62,17 @@ router.use("/brands", brandRoutes);
 router.use("/products", productRoutes);
 router.use("/content", contentRoutes);
 router.use("/content/types/:contentTypeId/fields", contentFieldRoutes);
+router.use("/admin/subscription", subscriptionRoutes);
 
-// 🔹 RELATIONS (tidak pakai /admin prefix, karena path di file sudah lengkap)
-// Pastikan di dalam file route-nya path sudah benar (misal `/admin/content/relations/...` atau `/content/relations/...`)
-router.use(contentRelationRoutes);      // contoh: /content/relations/...
-router.use(contentRelationM2mRoutes);   // contoh: /content/relations/m2m/...
+// --- Relations (path jelas di sini, child router pakai path relatif) ---
+router.use("/content/relations", contentRelationRoutes);
+router.use("/content/relations/m2m", contentRelationM2mRoutes);
 
 // --- Admin (protected) ---
-// yang lebih spesifik dulu di bawah /admin/content-* baru yang generic /admin/content
 router.use("/admin/content/m2m", m2mAdminRoutes);
-router.use("/admin/content/denorm", denormAdmin);
+router.use("/admin/content/denorm", denormAdminRoutes);
 router.use("/admin/content", contentAdminRoutes);
+router.use("/admin/billing", billingAdminRoutes);
 
 router.use("/admin/brands", brandAdminRoutes);
 router.use("/admin/products", productAdminRoutes);
@@ -77,5 +82,8 @@ router.use("/admin/plans", planAdminRoutes);
 router.use("/public/content", contentPublicRoutes);
 router.use("/docs", docsRoutes);
 router.use("/uploads", uploadRoutes);
+
+// --- Webhooks ---
+router.use("/webhooks/billing", billingWebhookRoutes);
 
 export default router;

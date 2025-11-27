@@ -1,6 +1,11 @@
 // src/modules/content/contentType.service.js
 import prisma from "../../config/prismaClient.js";
 import contentTypeRepository from "./contentType.repository.js";
+import contentEntryRepository from "./contentEntry.repository.js";
+import {
+  enforcePlanLimit,
+  PLAN_LIMIT_ACTIONS,
+} from "../../services/planLimit.service.js";
 
 const API_KEY_REGEX = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
@@ -41,6 +46,9 @@ class ContentTypeService {
     if (existing) {
       throw new Error("apiKey already exists in this workspace");
     }
+
+    // 🔐 Enforce plan limit: maxContentTypes
+    await enforcePlanLimit(workspaceId, PLAN_LIMIT_ACTIONS.ADD_CONTENT_TYPE);
 
     return contentTypeRepository.create({
       ...data,
@@ -89,7 +97,26 @@ class ContentTypeService {
       }
     }
 
-    return contentTypeRepository.update(id, payload);
+    // 🔐 SEO CONFIG ENFORCEMENT
+    // Jika seoEnabled diubah dari true → false, kita perlu auto-clean SEO fields
+    const willDisableSeo =
+      typeof payload.seoEnabled === "boolean" &&
+      payload.seoEnabled === false &&
+      ct.seoEnabled === true;
+
+    // Update content type dulu
+    const updated = await contentTypeRepository.update(id, payload);
+
+    // Jika baru saja mematikan SEO untuk model ini:
+    // - bersihkan semua SEO fields di entries terkait (multi-tenant aware)
+    if (willDisableSeo) {
+      await contentEntryRepository.clearSeoFieldsByContentType(
+        workspaceId,
+        id
+      );
+    }
+
+    return updated;
   }
 
   async delete(id, workspaceId) {

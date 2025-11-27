@@ -1,10 +1,20 @@
+// src/modules/asset/asset.controller.js
 import assetService from "./asset.service.js";
 
 class AssetController {
   async list(req, res) {
     try {
-      const workspaceId = req.workspace?.id || req.ctx?.workspaceId || req.headers["x-workspace-id"];
-      const { q, mime, tag, folder, page, limit, sort } = req.query;
+      const workspaceId =
+        req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+
+      if (!workspaceId) {
+        return res
+          .status(400)
+          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+      }
+
+      const { q, mime, tag, folder, page, limit, sort, onlyImages } = req.query;
+
       const data = await assetService.list({
         workspaceId,
         q,
@@ -14,37 +24,93 @@ class AssetController {
         page: Number(page || 1),
         limit: Number(limit || 20),
         sort: sort || "createdAt:desc",
+        onlyImages:
+          typeof onlyImages === "string"
+            ? onlyImages.toLowerCase() === "true"
+            : !!onlyImages,
       });
-      res.json(data);
+
+      return res.json({
+        success: true,
+        ...data,
+      });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return res
+        .status(e.status || 400)
+        .json({ message: e.message || "Failed to list assets" });
     }
   }
 
   async detail(req, res) {
     try {
-      const data = await assetService.get(req.params.id);
-      res.json(data);
+      const workspaceId =
+        req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+
+      if (!workspaceId) {
+        return res
+          .status(400)
+          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+      }
+
+      const data = await assetService.get({
+        id: req.params.id,
+        workspaceId,
+      });
+
+      return res.json({ success: true, data });
     } catch (e) {
-      res.status(404).json({ error: e.message });
+      return res
+        .status(e.status || 404)
+        .json({ message: e.message || "Asset not found" });
     }
   }
 
   async update(req, res) {
     try {
-      const data = await assetService.update({ id: req.params.id, data: req.body });
-      res.json(data);
+      const workspaceId =
+        req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+
+      if (!workspaceId) {
+        return res
+          .status(400)
+          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+      }
+
+      const data = await assetService.update({
+        id: req.params.id,
+        workspaceId,
+        data: req.body || {},
+      });
+
+      return res.json({ success: true, data });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return res
+        .status(e.status || 400)
+        .json({ message: e.message || "Failed to update asset" });
     }
   }
 
   async remove(req, res) {
     try {
-      await assetService.remove({ id: req.params.id });
-      res.json({ ok: true });
+      const workspaceId =
+        req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+
+      if (!workspaceId) {
+        return res
+          .status(400)
+          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+      }
+
+      await assetService.remove({
+        id: req.params.id,
+        workspaceId,
+      });
+
+      return res.json({ success: true, message: "Asset deleted" });
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      return res
+        .status(e.status || 400)
+        .json({ message: e.message || "Failed to delete asset" });
     }
   }
 }

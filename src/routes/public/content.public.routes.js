@@ -4,23 +4,24 @@ import prisma from "../../config/prismaClient.js";
 import { workspaceContext } from "../../middlewares/workspace.js";
 import contentEntryController from "../../modules/content/contentEntry.controller.js";
 import { expandRelations } from "../../modules/content/relations.expander.js";
+import { getSeoLengthHints } from "../../utils/seoUtils.js";
 
 const router = express.Router();
 
 /** =========================
- *  UTIL: resolve ContentType.id dari apiKey
+ *  UTIL: resolve ContentType (id + seoEnabled) dari apiKey
  *  ========================= */
-async function resolveCTIdOrThrow(workspaceId, apiKey) {
+async function resolveContentTypeOrThrow(workspaceId, apiKey) {
   const ct = await prisma.contentType.findFirst({
     where: { workspaceId, apiKey },
-    select: { id: true },
+    select: { id: true, apiKey: true, name: true, seoEnabled: true },
   });
   if (!ct) {
     const err = new Error("Content type not found");
     err.status = 404;
     throw err;
   }
-  return ct.id;
+  return ct;
 }
 
 /**
@@ -86,6 +87,72 @@ ${urlsXml}
 });
 
 /**
+ * GET /:contentType/seo-config
+ *
+ * Endpoint kecil untuk FE:
+ * - Ambil status seoEnabled per ContentType
+ * - Return length hints (SERP best practice)
+ *
+ * Contoh response:
+ * {
+ *   contentType: { id, apiKey, name, seoEnabled },
+ *   seo: {
+ *     enabled: true,
+ *     lengthHints: { title: { recommendedMax: 60 }, metaDescription: { recommendedMax: 160 } },
+ *     fields: { ... }
+ *   }
+ * }
+ */
+router.get("/:contentType/seo-config", workspaceContext, async (req, res) => {
+  try {
+    const workspaceId =
+      req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+    if (!workspaceId) {
+      return res.status(400).json({ message: "workspaceId required" });
+    }
+
+    const { contentType } = req.params;
+    const ct = await resolveContentTypeOrThrow(workspaceId, contentType);
+
+    const hints = getSeoLengthHints();
+
+    return res.json({
+      contentType: {
+        id: ct.id,
+        apiKey: ct.apiKey,
+        name: ct.name,
+        seoEnabled: ct.seoEnabled,
+      },
+      seo: {
+        enabled: ct.seoEnabled,
+        lengthHints: hints,
+        fields: {
+          seoTitle: {
+            type: "string",
+            recommendedMax: hints.title?.recommendedMax ?? 60,
+          },
+          metaDescription: {
+            type: "string",
+            recommendedMax: hints.metaDescription?.recommendedMax ?? 160,
+          },
+          keywords: {
+            type: "array",
+            inputFormat: "string_or_array",
+            separator: ",",
+            description:
+              "FE boleh kirim 'a,b,c' atau ['a','b','c'], BE akan normalisasi ke array.",
+          },
+        },
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    const status = err.status || 400;
+    return res.status(status).json({ message: err.message || "Server error" });
+  }
+});
+
+/**
  * GET /:contentType
  * List PUBLISHED ONLY + SEO fields
  *
@@ -96,7 +163,7 @@ ${urlsXml}
  *  - sort     : "publishedAt:desc" default | "publishedAt:asc" | "seoTitle:asc" | ...
  *  - include  : "values" dan/atau "relations" (comma-separated)
  *  - relations: "author,brand,categories" (filter field RELATION by apiKey)
- *  - relationsDepth   : number (default 1; dibatasi 1..3 di sini)
+ *  - relationsDepth   : number (default 1; dibatasi 1..5 di sini)
  *  - relationsSummary : "basic" | "full" (full = target include values)
  */
 router.get("/:contentType", workspaceContext, async (req, res) => {
@@ -118,7 +185,8 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       relationsSummary = "basic",
     } = req.query;
 
-    const contentTypeId = await resolveCTIdOrThrow(workspaceId, contentType);
+    const ct = await resolveContentTypeOrThrow(workspaceId, contentType);
+    const contentTypeId = ct.id;
 
     // parse include flags
     const includeSet = new Set(
@@ -137,7 +205,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
         .map((s) => s.trim())
         .filter(Boolean)
     );
-    const depth = Math.max(1, Math.min(3, Number(relationsDepth || 1)));
+    const depth = Math.max(1, Math.min(5, Number(relationsDepth || 1)));
     const summary = relationsSummary === "full" ? "full" : "basic";
 
     // parsing sort
@@ -214,7 +282,17 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       prisma.contentEntry.count({ where }),
     ]);
 
-    // expand relations (optional) pakai relations.expander.js (no.5)
+    // Extra safety: jika SEO dimatikan untuk ContentType ini,
+    // pastikan response public tidak mengandung SEO fields.
+    if (ct.seoEnabled === false && items.length > 0) {
+      for (const it of items) {
+        it.seoTitle = null;
+        it.metaDescription = null;
+        it.keywords = [];
+      }
+    }
+
+    // expand relations (optional) pakai relations.expander.js
     if (wantRelations && items.length > 0) {
       const relMap = await expandRelations({
         workspaceId,
@@ -250,7 +328,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
  * Query:
  *  - include=values[,relations]
  *  - relations=author,brand,...
- *  - relationsDepth=1..3
+ *  - relationsDepth=1..5
  *  - relationsSummary=basic|full
  */
 router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
@@ -268,7 +346,8 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
       relationsSummary = "basic",
     } = req.query;
 
-    const contentTypeId = await resolveCTIdOrThrow(workspaceId, contentType);
+    const ct = await resolveContentTypeOrThrow(workspaceId, contentType);
+    const contentTypeId = ct.id;
 
     const includeSet = new Set(
       String(include)
@@ -285,7 +364,7 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
         .map((s) => s.trim())
         .filter(Boolean)
     );
-    const depth = Math.max(1, Math.min(3, Number(relationsDepth || 1)));
+    const depth = Math.max(1, Math.min(5, Number(relationsDepth || 1)));
     const summary = relationsSummary === "full" ? "full" : "basic";
 
     const selectBase = {
@@ -336,6 +415,13 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
         .status(404)
         .json({ message: "Entry not found or not published" });
 
+    // Extra safety jika SEO dimatikan pada model ini
+    if (ct.seoEnabled === false) {
+      item.seoTitle = null;
+      item.metaDescription = null;
+      item.keywords = [];
+    }
+
     if (wantRelations) {
       const relMap = await expandRelations({
         workspaceId,
@@ -359,6 +445,10 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
 /**
  * Search entries untuk relation picker (public/admin sama-sama bisa pakai endpoint ini)
  * GET /:contentType/search
+ *
+ * NOTE: route ini sebaiknya didefinisikan SEBELUM pattern generic :slug
+ * supaya /:contentType/search tidak ketangkep sebagai slug = "search".
+ * Di file ini kita sudah mengatur urutannya.
  */
 router.get(
   "/:contentType/search",

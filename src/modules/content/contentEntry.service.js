@@ -1,32 +1,18 @@
 // src/modules/content/contentEntry.service.js
-import contentEntryRepository, { findManyWithM2mRelated } from "./contentEntry.repository.js";
+import contentEntryRepository, {
+  findManyWithM2mRelated,
+} from "./contentEntry.repository.js";
 import prisma from "../../config/prismaClient.js";
 import { generateSlug } from "../../utils/slugGenerator.js";
 import { enforceOnPayload } from "./entry.validation.js";
 import { recomputeDenormForTargetChange } from "../../services/denorm.service.js";
+import { normalizeSeoFields } from "../../utils/seoUtils.js";
+import {
+  enforcePlanLimit,
+  PLAN_LIMIT_ACTIONS,
+} from "../../services/planLimit.service.js";
 
 class ContentEntryService {
-  // ===================== UTIL: SEO Normalization =====================
-  _normalizeSeoInput(data = {}) {
-    const out = { ...data };
-
-    // metaDescription max 160 chars
-    if (typeof out.metaDescription === "string" && out.metaDescription.length > 160) {
-      out.metaDescription = out.metaDescription.slice(0, 160);
-    }
-
-    // keywords: allow "a,b,c" or ["a","b","c"]
-    if (typeof out.keywords === "string") {
-      out.keywords = out.keywords
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (!Array.isArray(out.keywords)) out.keywords = [];
-
-    return out;
-  }
-
   // ===================== READ =====================
 
   /**
@@ -297,8 +283,22 @@ class ContentEntryService {
       throw new Error("workspaceId and contentTypeId required");
     }
 
-    // Normalisasi SEO (limit 160 & keywords → array)
-    data = this._normalizeSeoInput(data);
+    // Normalisasi SEO (limit 160 & keywords → array) via util global
+    data = normalizeSeoFields(data);
+
+    // 🔧 Ambil ContentType untuk cek seoEnabled (multi-tenant aware)
+    const contentType = await prisma.contentType.findFirst({
+      where: {
+        id: data.contentTypeId,
+        workspaceId: data.workspaceId,
+      },
+      select: { id: true, seoEnabled: true },
+    });
+    if (!contentType) {
+      const e = new Error("ContentType not found");
+      e.status = 404;
+      throw e;
+    }
 
     const { fieldValues, relations, generated } = await enforceOnPayload({
       contentTypeId: data.contentTypeId,
@@ -306,14 +306,16 @@ class ContentEntryService {
       values: data.values || [],
     });
 
+    // Slug tetap dihitung seperti sebelumnya
     let finalSlug = data.slug ?? null;
     if (!finalSlug && data.seoTitle) finalSlug = generateSlug(data.seoTitle);
     if (!finalSlug && generated.slug) finalSlug = generated.slug;
 
-    // 🔒 Cek duplicate slug di workspace
+    // 🔒 Cek duplicate slug per (workspace, contentType)
     if (finalSlug) {
       const existingSlug = await contentEntryRepository.isSlugTaken(
         data.workspaceId,
+        data.contentTypeId,
         finalSlug
       );
       if (existingSlug) {
@@ -324,15 +326,21 @@ class ContentEntryService {
       }
     }
 
+    // 🔐 Enforce plan limit: maxEntries per workspace
+    await enforcePlanLimit(data.workspaceId, PLAN_LIMIT_ACTIONS.ADD_ENTRY);
+
     const entry = await prisma.$transaction(async (tx) => {
       const created = await tx.contentEntry.create({
         data: {
           workspaceId: data.workspaceId,
           contentTypeId: data.contentTypeId,
           slug: finalSlug,
-          seoTitle: data.seoTitle ?? null,
-          metaDescription: data.metaDescription ?? null, // ≤160 dijaga di normalize
-          keywords: data.keywords ?? [],
+          // 🔐 Enforce seoEnabled: hanya simpan SEO kalau diizinkan di ContentType
+          seoTitle: contentType.seoEnabled ? data.seoTitle ?? null : null,
+          metaDescription: contentType.seoEnabled
+            ? data.metaDescription ?? null
+            : null,
+          keywords: contentType.seoEnabled ? data.keywords ?? [] : [],
           isPublished: !!data.isPublished,
           publishedAt: data.publishedAt ?? null,
           createdById: data.createdById ?? null,
@@ -384,18 +392,28 @@ class ContentEntryService {
       throw e;
     }
 
-    // Normalisasi SEO (limit 160 & keywords → array)
-    data = this._normalizeSeoInput(data);
+    // Normalisasi SEO (limit 160 & keywords → array) via util global
+    data = normalizeSeoFields(data);
+
+    // 🔧 Ambil ContentType untuk cek seoEnabled (multi-tenant aware)
+    const contentType = await prisma.contentType.findFirst({
+      where: {
+        id: existing.contentTypeId,
+        workspaceId: existing.workspaceId,
+      },
+      select: { id: true, seoEnabled: true },
+    });
 
     let finalSlug = data.slug ?? existing.slug ?? null;
     if (!data.slug && data.seoTitle && !existing.slug) {
       finalSlug = generateSlug(data.seoTitle);
     }
 
-    // 🔒 Cek duplicate slug di workspace (exclude entry ini)
+    // 🔒 Cek duplicate slug per (workspace, contentType) (exclude entry ini)
     if (finalSlug) {
       const existingSlug = await contentEntryRepository.isSlugTaken(
         existing.workspaceId,
+        existing.contentTypeId,
         finalSlug,
         id
       );
@@ -417,17 +435,33 @@ class ContentEntryService {
       });
       fieldValues = enforced.fieldValues;
       relations = enforced.relations;
-      if (!finalSlug && enforced.generated?.slug) finalSlug = enforced.generated.slug;
+      if (!finalSlug && enforced.generated?.slug) {
+        finalSlug = enforced.generated.slug;
+      }
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // 🔐 Enforce seoEnabled di level update:
+      // - Jika seoEnabled = false → SEO fields selalu dibersihkan (auto-clean)
+      // - Jika true → pakai data baru kalau ada, fallback ke existing
+      const seoPatch =
+        contentType && contentType.seoEnabled === false
+          ? {
+              seoTitle: null,
+              metaDescription: null,
+              keywords: [],
+            }
+          : {
+              seoTitle: data.seoTitle ?? existing.seoTitle,
+              metaDescription: data.metaDescription ?? existing.metaDescription,
+              keywords: data.keywords ?? existing.keywords,
+            };
+
       const saved = await tx.contentEntry.update({
         where: { id },
         data: {
           slug: finalSlug,
-          seoTitle: data.seoTitle ?? existing.seoTitle,
-          metaDescription: data.metaDescription ?? existing.metaDescription, // ≤160 dijaga
-          keywords: data.keywords ?? existing.keywords,
+          ...seoPatch,
           isPublished:
             typeof data.isPublished === "boolean"
               ? data.isPublished

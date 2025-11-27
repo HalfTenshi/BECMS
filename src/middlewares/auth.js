@@ -1,27 +1,74 @@
+// src/middlewares/auth.js
+// Middleware autentikasi JWT (industry-standard clean version)
+
 import { verifyToken } from "../utils/jwt.js";
 import prisma from "../config/prismaClient.js";
 
-export async function auth(req, res, next) {
+/**
+ * Auth middleware
+ * - Validasi Bearer token
+ * - Decode JWT -> req.user
+ * - Load user ringkas dari database
+ * - Validasi status ACTIVE
+ */
+export const auth = async (req, res, next) => {
   try {
+    // --- Ambil token dari header ---
     const header = req.headers.authorization || "";
-    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ error: "Missing token" });
+    if (!header.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing or invalid Authorization header" });
+    }
 
-    const decoded = verifyToken(token);
-    // decoded: { userId, workspaceId? , iat, exp }
-    req.user = { id: decoded.userId, workspaceId: decoded.workspaceId || null };
+    const token = header.replace("Bearer ", "").trim();
+    if (!token) {
+      return res.status(401).json({ error: "Token not provided" });
+    }
 
-    // (opsional) muat user ringkas untuk penggunaan downstream
-    req.user.profile = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, name: true, email: true, status: true, pictureUrl: true },
+    // --- Verify & decode token ---
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+
+    // decoded: { userId, workspaceId?, iat, exp }
+    const userId = decoded.userId;
+    const workspaceId = decoded.workspaceId || null;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Token payload missing userId" });
+    }
+
+    // Inject ke req.user
+    req.user = { id: userId, workspaceId };
+
+    // --- Load user profile minimal ---
+    const profile = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+        pictureUrl: true,
+      },
     });
 
-    if (!req.user.profile) return res.status(401).json({ error: "Invalid user" });
-    if (req.user.profile.status !== "ACTIVE") return res.status(403).json({ error: "Account not active" });
+    if (!profile) {
+      return res.status(401).json({ error: "User not found" });
+    }
 
+    if (profile.status !== "ACTIVE") {
+      return res.status(403).json({ error: "Account not active" });
+    }
+
+    req.user.profile = profile;
+
+    // --- Sukses ---
     next();
-  } catch (e) {
-    return res.status(401).json({ error: "Invalid or expired token" });
+  } catch (err) {
+    console.error("Auth middleware error:", err);
+    return res.status(401).json({ error: "Authentication failed" });
   }
-}
+};

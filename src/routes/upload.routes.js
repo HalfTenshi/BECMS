@@ -1,3 +1,4 @@
+// src/routes/upload.routes.js
 import express from "express";
 import multer from "multer";
 import path from "path";
@@ -6,7 +7,7 @@ import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import { fileTypeFromBuffer } from "file-type";
 
-import { auth } from "../middlewares/auth.js"; // pakai named import sesuai snippet kamu
+import { auth } from "../middlewares/auth.js";
 import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
 import { ACTIONS, RESOURCES } from "../constants/permissions.js";
@@ -18,9 +19,10 @@ const router = express.Router();
 router.use(auth, workspaceContext);
 
 // ----- Config dasar (bisa diatur via ENV) -----
-const MAX_MB = Number(process.env.UPLOAD_MAX_MB ?? "5");       // default 5 MB per file
+const MAX_MB = Number(process.env.UPLOAD_MAX_MB ?? "5"); // default 5 MB per file
 const MAX_FILES = Number(process.env.UPLOAD_MAX_FILES ?? "5"); // default 5 file sekali upload
-const ALLOW_MIME = (process.env.UPLOAD_ALLOW_MIME ?? "image/png,image/jpeg,image/webp")
+const ALLOW_MIME = (process.env.UPLOAD_ALLOW_MIME ??
+  "image/png,image/jpeg,image/webp")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -37,7 +39,8 @@ const upload = multer({
 // ----- Helper path root project -----
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, "../../.."); // routes/ -> src/ -> project root
+// routes/ -> src/ -> project root
+const projectRoot = path.resolve(__dirname, "..", "..");
 const uploadRoot = path.join(projectRoot, "uploads");
 
 // ----- Utility: buat nama file acak -----
@@ -48,8 +51,11 @@ function randomNameWithExt(originalName = "", forcedExt = "") {
 }
 
 /* =========================
-   POST /  (multi-file)
-   form-data: files[] (max MAX_FILES)
+   POST /  (multi-file upload)
+   form-data:
+     - files[] (max MAX_FILES)
+     - folder (opsional)
+     - tags   (opsional, "tag1,tag2")
    ========================= */
 router.post(
   "/",
@@ -61,13 +67,25 @@ router.post(
         return res.status(400).json({ message: "No files uploaded" });
       }
 
-      await fs.mkdir(uploadRoot, { recursive: true });
-
       const workspaceId =
-        req.workspace?.id || req.ctx?.workspaceId || req.headers["x-workspace-id"];
+        req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
       const userId = req.user?.id || null;
 
+      if (!workspaceId) {
+        return res
+          .status(400)
+          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+      }
+
+      // Folder root untuk semua uploads
+      await fs.mkdir(uploadRoot, { recursive: true });
+
+      // Pisahkan per workspace: /uploads/{workspaceId}/filename
+      const wsUploadRoot = path.join(uploadRoot, workspaceId);
+      await fs.mkdir(wsUploadRoot, { recursive: true });
+
       const saved = [];
+
       for (const f of req.files) {
         // Deteksi mime dari buffer — jangan percaya ekstensi saja
         const detected = await fileTypeFromBuffer(f.buffer);
@@ -77,19 +95,22 @@ router.post(
         const { mime, ext } = detected;
 
         if (!ALLOW_MIME.includes(mime)) {
-          throw new Error(`Mime not allowed: ${mime}`);
+          const err = new Error(`Mime not allowed: ${mime}`);
+          err.status = 400;
+          throw err;
         }
 
         const filename = randomNameWithExt(f.originalname, `.${ext}`);
-        const outPath = path.join(uploadRoot, filename);
+        const outPath = path.join(wsUploadRoot, filename);
 
         await fs.writeFile(outPath, f.buffer, { flag: "wx" }); // fail if exists
 
         // (Opsional) ambil dimensi gambar bila paket 'image-size' terpasang
-        let width = null, height = null;
+        let width = null;
+        let height = null;
         if (mime.startsWith("image/")) {
           try {
-            const { imageSize } = await import("image-size");
+            const { default: imageSize } = await import("image-size");
             const dim = imageSize(f.buffer);
             width = dim?.width ?? null;
             height = dim?.height ?? null;
@@ -98,7 +119,22 @@ router.post(
           }
         }
 
-        const url = `/uploads/${filename}`;
+        // URL publik (sesuaikan dengan static serving di index.js)
+        const url = `/uploads/${workspaceId}/${filename}`;
+
+        // folder/tags bisa dikirim dari form-data (opsional)
+        const folder =
+          typeof req.body?.folder === "string" && req.body.folder.trim()
+            ? req.body.folder.trim()
+            : null;
+
+        const extraTags =
+          req.body?.tags != null
+            ? String(req.body.tags)
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [];
 
         // === Integrasi Media Library: buat record Asset ===
         const asset = await assetService.ingestOne({
@@ -113,18 +149,15 @@ router.post(
             url,
             width,
             height,
-            // folder/tags bisa dikirim dari form-data (opsional)
-            folder: req.body?.folder || null,
-            extraTags: req.body?.tags
-              ? String(req.body.tags).split(",").map((s) => s.trim()).filter(Boolean)
-              : [],
+            folder,
+            extraTags,
           },
         });
 
         saved.push(asset); // kembalikan data Asset, bukan sekadar URL
       }
 
-      return res.json({ files: saved });
+      return res.json({ success: true, files: saved });
     } catch (err) {
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ message: err.message });
@@ -136,6 +169,7 @@ router.post(
 
 /* =========================
    GET /allow-mime  (opsional)
+   Beritahu FE apa saja MIME yang diizinkan.
    ========================= */
 router.get(
   "/allow-mime",

@@ -1,33 +1,42 @@
+// src/routes/asset.routes.js
 import express from "express";
-import auth from "../middlewares/auth.js";
+import { auth } from "../middlewares/auth.js";
 import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
 import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 import assetController from "../modules/asset/asset.controller.js";
 
 const router = express.Router();
-// 🔒 Media Library = private
+
+// 🔒 Media Library = private (per workspace)
 router.use(auth, workspaceContext);
 
+// List assets
 router.get(
   "/",
   authorize(ACTIONS.READ, RESOURCES.ASSETS),
-  assetController.list
+  (req, res) => assetController.list(req, res)
 );
+
+// Detail asset
 router.get(
   "/:id",
   authorize(ACTIONS.READ, RESOURCES.ASSETS),
-  assetController.detail
+  (req, res) => assetController.detail(req, res)
 );
+
+// Update metadata (tags, folder, dsb)
 router.put(
-  "//:id",
+  "/:id",
   authorize(ACTIONS.UPDATE, RESOURCES.ASSETS),
-  assetController.update
+  (req, res) => assetController.update(req, res)
 );
+
+// Delete asset
 router.delete(
-  "//:id",
+  "/:id",
   authorize(ACTIONS.DELETE, RESOURCES.ASSETS),
-  assetController.remove
+  (req, res) => assetController.remove(req, res)
 );
 
 export default router;

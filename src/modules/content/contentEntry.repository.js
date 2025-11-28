@@ -18,13 +18,48 @@ class ContentEntryRepository {
     });
   }
 
-  async findById(id, workspaceId, include = { contentType: true, values: true }) {
+  async findById(
+    id,
+    workspaceId,
+    include = { contentType: true, values: true }
+  ) {
     return prisma.contentEntry.findFirst({
       where: {
         id,
         ...(workspaceId ? { workspaceId } : {}),
       },
       include,
+    });
+  }
+
+  /**
+   * Helper khusus untuk kebutuhan SEO preview.
+   * Mengambil hanya field-field yang relevan untuk SERP:
+   *  - id, workspaceId, contentTypeId
+   *  - slug, seoTitle, metaDescription, keywords
+   *  - isPublished, publishedAt
+   *
+   * workspaceId opsional, tapi disarankan diisi untuk multi-tenant safety.
+   */
+  async findSeoById(entryId, workspaceId) {
+    if (!entryId) return null;
+
+    return prisma.contentEntry.findFirst({
+      where: {
+        id: entryId,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+      select: {
+        id: true,
+        workspaceId: true,
+        contentTypeId: true,
+        slug: true,
+        seoTitle: true,
+        metaDescription: true,
+        keywords: true,
+        isPublished: true,
+        publishedAt: true,
+      },
     });
   }
 

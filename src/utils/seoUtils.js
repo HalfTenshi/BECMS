@@ -1,11 +1,23 @@
 // src/utils/seoUtils.js
 
 /**
+ * Panjang maksimal SEO berdasarkan praktik umum SERP.
+ * Dipakai di BE (validation) & boleh diekspos ke FE.
+ */
+export const MAX_SEO_TITLE_LENGTH = 60;
+export const MAX_META_DESCRIPTION_LENGTH = 160;
+
+/**
  * Normalize SEO-related fields supaya konsisten di seluruh sistem.
+ *
+ * Catatan penting:
+ * - ❌ TIDAK lagi memotong metaDescription di sini.
+ *   Pembatasan panjang dilakukan di service sebagai business rule (422).
  *
  * - metaDescription:
  *    - jika string → trim
- *    - dipotong max 160 karakter (best practice SERP)
+ * - seoTitle:
+ *    - jika string → trim
  * - keywords:
  *    - jika string "a,b,c" → di-split by "," → trim → filter kosong
  *    - jika bukan array/string → fallback ke []
@@ -13,11 +25,16 @@
 export function normalizeSeoFields(data = {}) {
   const out = { ...data };
 
-  // metaDescription max 160 chars
+  // seoTitle: trim saja (batas panjang dicek di service)
+  if (typeof out.seoTitle === "string") {
+    const trimmed = out.seoTitle.trim();
+    out.seoTitle = trimmed.length > 0 ? trimmed : null;
+  }
+
+  // metaDescription: trim saja (batas 160 chars dicek di service)
   if (typeof out.metaDescription === "string") {
     const trimmed = out.metaDescription.trim();
-    out.metaDescription =
-      trimmed.length > 160 ? trimmed.slice(0, 160) : trimmed;
+    out.metaDescription = trimmed.length > 0 ? trimmed : null;
   }
 
   // keywords: allow "a,b,c" or ["a","b","c"]
@@ -59,16 +76,16 @@ export function isSeoEnabledForContentType(contentType) {
 }
 
 /**
- * (Optional) Hints panjang SEO buat FE jika mau dipakai di API metadata.
+ * Hints panjang SEO buat FE jika mau dipakai di API metadata.
  * Tidak dipakai langsung di BE, tapi bisa di-expose lewat endpoint config.
  */
 export function getSeoLengthHints() {
   return {
     title: {
-      recommendedMax: 60,    // karakter
+      recommendedMax: MAX_SEO_TITLE_LENGTH, // karakter
     },
     metaDescription: {
-      recommendedMax: 160,   // karakter
+      recommendedMax: MAX_META_DESCRIPTION_LENGTH, // karakter
     },
   };
 }

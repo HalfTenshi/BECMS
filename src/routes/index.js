@@ -8,6 +8,9 @@ import workspaceRoutes from "./workspace.routes.js";
 import roleRoutes from "./role.routes.js";
 import permissionRoutes from "./permission.routes.js";
 
+// SEO Support (B4)
+import seoRoutes from "./seo.routes.js";
+
 // Business modules (protected)
 import planRoutes from "./plan.routes.js";
 import brandRoutes from "./brand.routes.js";
@@ -43,20 +46,34 @@ import debugContentTypesRoutes from "./debug.contentTypes.routes.js";
 
 const router = express.Router();
 
-// --- Debug routes (sebaiknya dibatasi di non-production) ---
+// -----------------------------------------------------------------------------
+// Debug routes (sebaiknya dibatasi di non-production)
+// -----------------------------------------------------------------------------
 router.use("/debug", debugRelationsRoutes);
 router.use("/debug", debugContentTypesRoutes);
 
-// --- Auth (login/register/reset) ---
+// -----------------------------------------------------------------------------
+// Auth (login/register/reset)
+// -----------------------------------------------------------------------------
 router.use("/auth", authRoutes);
 
-// --- Core (protected via middleware di masing-masing file) ---
+// -----------------------------------------------------------------------------
+// Core (protected via middleware di masing-masing file)
+// -----------------------------------------------------------------------------
 router.use("/users", userRoutes);
 router.use("/workspaces", workspaceRoutes);
 router.use("/roles", roleRoutes);
 router.use("/permissions", permissionRoutes);
 
-// --- Business modules (protected) ---
+// -----------------------------------------------------------------------------
+// SEO SUPPORT (B4) — NEW ENDPOINT
+// Full endpoint: POST /api/seo/analyze
+// -----------------------------------------------------------------------------
+router.use("/seo", seoRoutes);
+
+// -----------------------------------------------------------------------------
+// Business modules (protected)
+// -----------------------------------------------------------------------------
 router.use("/plans", planRoutes);
 router.use("/brands", brandRoutes);
 router.use("/products", productRoutes);
@@ -64,11 +81,15 @@ router.use("/content", contentRoutes);
 router.use("/content/types/:contentTypeId/fields", contentFieldRoutes);
 router.use("/admin/subscription", subscriptionRoutes);
 
-// --- Relations (path jelas di sini, child router pakai path relatif) ---
+// -----------------------------------------------------------------------------
+// Relations (path jelas di sini, child router pakai path relatif)
+// -----------------------------------------------------------------------------
 router.use("/content/relations", contentRelationRoutes);
 router.use("/content/relations/m2m", contentRelationM2mRoutes);
 
-// --- Admin (protected) ---
+// -----------------------------------------------------------------------------
+// Admin (protected)
+// -----------------------------------------------------------------------------
 router.use("/admin/content/m2m", m2mAdminRoutes);
 router.use("/admin/content/denorm", denormAdminRoutes);
 router.use("/admin/content", contentAdminRoutes);
@@ -78,12 +99,16 @@ router.use("/admin/brands", brandAdminRoutes);
 router.use("/admin/products", productAdminRoutes);
 router.use("/admin/plans", planAdminRoutes);
 
-// --- Public (NO auth) ---
+// -----------------------------------------------------------------------------
+// Public (NO auth)
+// -----------------------------------------------------------------------------
 router.use("/public/content", contentPublicRoutes);
 router.use("/docs", docsRoutes);
 router.use("/uploads", uploadRoutes);
 
-// --- Webhooks ---
+// -----------------------------------------------------------------------------
+// Webhooks
+// -----------------------------------------------------------------------------
 router.use("/webhooks/billing", billingWebhookRoutes);
 
 export default router;

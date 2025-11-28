@@ -6,11 +6,75 @@ import prisma from "../../config/prismaClient.js";
 import { generateSlug } from "../../utils/slugGenerator.js";
 import { enforceOnPayload } from "./entry.validation.js";
 import { recomputeDenormForTargetChange } from "../../services/denorm.service.js";
-import { normalizeSeoFields } from "../../utils/seoUtils.js";
+import {
+  normalizeSeoFields,
+  MAX_SEO_TITLE_LENGTH,
+  MAX_META_DESCRIPTION_LENGTH,
+} from "../../utils/seoUtils.js";
 import {
   enforcePlanLimit,
   PLAN_LIMIT_ACTIONS,
 } from "../../services/planLimit.service.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
+
+/**
+ * Validasi panjang seoTitle & metaDescription.
+ * Requirement:
+ *  - seoTitle > MAX_SEO_TITLE_LENGTH → 422 + SEO_TITLE_TOO_LONG
+ *  - metaDescription > MAX_META_DESCRIPTION_LENGTH → 422 + SEO_DESCRIPTION_TOO_LONG
+ *
+ * Pastikan 422 keluar dengan format standar:
+ * {
+ *   "error": {
+ *     "status": 422,
+ *     "code": "SEO_TITLE_TOO_LONG",
+ *     "reason": "SEO_VALIDATION_FAILED",
+ *     ...
+ *   }
+ * }
+ */
+function validateSeoLengths({ seoTitle, metaDescription }) {
+  if (typeof seoTitle === "string") {
+    const len = seoTitle.trim().length;
+    if (len > MAX_SEO_TITLE_LENGTH) {
+      throw new ApiError(
+        422,
+        `seoTitle must be at most ${MAX_SEO_TITLE_LENGTH} characters`,
+        {
+          code: ERROR_CODES.SEO_TITLE_TOO_LONG,
+          reason: "SEO_VALIDATION_FAILED",
+          resource: "CONTENT_ENTRY_SEO",
+          details: {
+            field: "seoTitle",
+            max: MAX_SEO_TITLE_LENGTH,
+            actual: len,
+          },
+        }
+      );
+    }
+  }
+
+  if (typeof metaDescription === "string") {
+    const len = metaDescription.trim().length;
+    if (len > MAX_META_DESCRIPTION_LENGTH) {
+      throw new ApiError(
+        422,
+        `metaDescription must be at most ${MAX_META_DESCRIPTION_LENGTH} characters`,
+        {
+          code: ERROR_CODES.SEO_DESCRIPTION_TOO_LONG,
+          reason: "SEO_VALIDATION_FAILED",
+          resource: "CONTENT_ENTRY_SEO",
+          details: {
+            field: "metaDescription",
+            max: MAX_META_DESCRIPTION_LENGTH,
+            actual: len,
+          },
+        }
+      );
+    }
+  }
+}
 
 class ContentEntryService {
   // ===================== READ =====================
@@ -33,7 +97,11 @@ class ContentEntryService {
       pageSize = 20,
     } = {}
   ) {
-    if (!workspaceId) throw new Error("workspaceId is required");
+    if (!workspaceId) {
+      throw new ApiError(400, "workspaceId is required", {
+        code: "WORKSPACE_REQUIRED",
+      });
+    }
 
     const where = { workspaceId };
 
@@ -45,9 +113,9 @@ class ContentEntryService {
         select: { id: true },
       });
       if (!ct) {
-        const e = new Error("ContentType not found");
-        e.status = 404;
-        throw e;
+        throw new ApiError(404, "ContentType not found", {
+          code: "CONTENT_TYPE_NOT_FOUND",
+        });
       }
       finalContentTypeId = ct.id;
     }
@@ -89,9 +157,9 @@ class ContentEntryService {
   async getById(id, workspaceId) {
     const entry = await contentEntryRepository.findById(id, workspaceId);
     if (!entry) {
-      const e = new Error("Entry not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "Entry not found", {
+        code: "CONTENT_ENTRY_NOT_FOUND",
+      });
     }
     return entry;
   }
@@ -111,9 +179,9 @@ class ContentEntryService {
       include: { contentType: true, values: true },
     });
     if (!entry) {
-      const e = new Error("Entry not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "Entry not found", {
+        code: "CONTENT_ENTRY_NOT_FOUND",
+      });
     }
 
     if (include === "relations") {
@@ -186,9 +254,9 @@ class ContentEntryService {
       select: { id: true },
     });
     if (!ct) {
-      const e = new Error("ContentType not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "ContentType not found", {
+        code: "CONTENT_TYPE_NOT_FOUND",
+      });
     }
     return ct.id;
   }
@@ -262,9 +330,9 @@ class ContentEntryService {
       select: { id: true },
     });
     if (!ct) {
-      const e = new Error("ContentType not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "ContentType not found", {
+        code: "CONTENT_TYPE_NOT_FOUND",
+      });
     }
 
     return findManyWithM2mRelated({
@@ -279,12 +347,21 @@ class ContentEntryService {
 
   // ===================== CREATE =====================
   async create(data) {
-    if (!data.workspaceId || !data.contentTypeId) {
-      throw new Error("workspaceId and contentTypeId required");
+    if (!data?.workspaceId || !data?.contentTypeId) {
+      throw new ApiError(400, "workspaceId and contentTypeId required", {
+        code: "CONTENT_ENTRY_CREATE_VALIDATION_ERROR",
+        reason: "VALIDATION_ERROR",
+      });
     }
 
-    // Normalisasi SEO (limit 160 & keywords → array) via util global
+    // Normalisasi SEO (trim & keywords → array)
     data = normalizeSeoFields(data);
+
+    // Validasi panjang SEO (B1 & B2)
+    validateSeoLengths({
+      seoTitle: data.seoTitle,
+      metaDescription: data.metaDescription,
+    });
 
     // 🔧 Ambil ContentType untuk cek seoEnabled (multi-tenant aware)
     const contentType = await prisma.contentType.findFirst({
@@ -295,9 +372,9 @@ class ContentEntryService {
       select: { id: true, seoEnabled: true },
     });
     if (!contentType) {
-      const e = new Error("ContentType not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "ContentType not found", {
+        code: "CONTENT_TYPE_NOT_FOUND",
+      });
     }
 
     const { fieldValues, relations, generated } = await enforceOnPayload({
@@ -319,10 +396,9 @@ class ContentEntryService {
         finalSlug
       );
       if (existingSlug) {
-        const e = new Error("Slug already in use");
-        e.status = 409;
-        e.code = "SLUG_CONFLICT";
-        throw e;
+        throw new ApiError(409, "Slug already in use", {
+          code: "SLUG_CONFLICT",
+        });
       }
     }
 
@@ -387,13 +463,27 @@ class ContentEntryService {
   async update(id, workspaceId, data) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      const e = new Error("Entry not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "Entry not found", {
+        code: "CONTENT_ENTRY_NOT_FOUND",
+      });
     }
 
-    // Normalisasi SEO (limit 160 & keywords → array) via util global
+    // Normalisasi SEO (trim & keywords → array)
     data = normalizeSeoFields(data);
+
+    // Tentukan SEO yang akan disimpan (gabungan existing + patch)
+    const seoTitleToCheck =
+      data.seoTitle !== undefined ? data.seoTitle : existing.seoTitle;
+    const metaDescriptionToCheck =
+      data.metaDescription !== undefined
+        ? data.metaDescription
+        : existing.metaDescription;
+
+    // Validasi panjang SEO (B1 & B2)
+    validateSeoLengths({
+      seoTitle: seoTitleToCheck,
+      metaDescription: metaDescriptionToCheck,
+    });
 
     // 🔧 Ambil ContentType untuk cek seoEnabled (multi-tenant aware)
     const contentType = await prisma.contentType.findFirst({
@@ -418,10 +508,9 @@ class ContentEntryService {
         id
       );
       if (existingSlug) {
-        const e = new Error("Slug already in use");
-        e.status = 409;
-        e.code = "SLUG_CONFLICT";
-        throw e;
+        throw new ApiError(409, "Slug already in use", {
+          code: "SLUG_CONFLICT",
+        });
       }
     }
 
@@ -522,9 +611,9 @@ class ContentEntryService {
   async delete(id, workspaceId) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      const e = new Error("Entry not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "Entry not found", {
+        code: "CONTENT_ENTRY_NOT_FOUND",
+      });
     }
     await contentEntryRepository.delete(id, workspaceId);
     return { message: "Entry deleted" };
@@ -533,9 +622,9 @@ class ContentEntryService {
   async publish(id, workspaceId) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      const e = new Error("Entry not found");
-      e.status = 404;
-      throw e;
+      throw new ApiError(404, "Entry not found", {
+        code: "CONTENT_ENTRY_NOT_FOUND",
+      });
     }
     const updated = await contentEntryRepository.publish(id, workspaceId);
     return updated;

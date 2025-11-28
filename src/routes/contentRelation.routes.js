@@ -8,12 +8,27 @@ import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
 const router = express.Router();
 
 /**
+ * Admin Content Relation (NON-M2M)
+ *
+ * Route-route di file ini:
+ *  - Mengelola relasi NON-M2M (ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE)
+ *  - Bekerja di atas tabel ContentRelation (bukan M2M table)
+ *  - Dipakai oleh panel admin / internal tools untuk mutasi relasi
+ *
+ * Catatan arsitektur:
+ *  - Public API (GET /api/public/content/...) tidak langsung pakai route ini,
+ *    tapi membaca data relasi via relations.expander.js
+ *    → Admin mutasi di sini, Public endpoint cukup konsumsi hasilnya.
+ */
+
+/**
  * POST /content/relations/attach
  * Tambah satu relasi NON-M2M (ONE_TO_ONE / ONE_TO_MANY / MANY_TO_ONE)
+ *
  * Body:
- *  - fieldId
- *  - fromEntryId
- *  - toEntryId
+ *  - fieldId      : ID field RELATION pada ContentField
+ *  - fromEntryId  : entry sumber
+ *  - toEntryId    : entry target
  */
 router.post(
   "/content/relations/attach",
@@ -47,9 +62,10 @@ router.post(
 
 /**
  * DELETE /content/relations/detach
- * Hapus relasi NON-M2M berdasarkan id baris ContentRelation
+ * Hapus relasi NON-M2M berdasarkan id baris ContentRelation.
+ *
  * Body:
- *  - id
+ *  - id : string (primary key ContentRelation)
  */
 router.delete(
   "/content/relations/detach",
@@ -61,6 +77,7 @@ router.delete(
       if (!id) {
         return res.status(400).json({ message: "id required" });
       }
+
       await service.delete(id);
       res.json({ ok: true });
     } catch (e) {
@@ -71,11 +88,17 @@ router.delete(
 
 /**
  * GET /content/relations/list
- * Query:
- *  - fieldId
- *  - fromEntryId
  *
- * Mengembalikan list relasi NON-M2M yang sudah terurut (position ASC)
+ * Query:
+ *  - fieldId     : RELATION field
+ *  - fromEntryId : entry sumber
+ *
+ * Mengembalikan list relasi NON-M2M untuk kombinasi (fieldId, fromEntryId),
+ * sudah terurut berdasarkan position ASC.
+ *
+ * Dipakai biasanya untuk:
+ *  - menampilkan daftar target di UI admin (mis. urutan authors, related posts)
+ *  - memvalidasi/cek hasil setelah attach/detach/reorder
  */
 router.get(
   "/content/relations/list",
@@ -104,15 +127,20 @@ router.get(
 
 /**
  * GET /content/relations/from-by-related
- * POIN 4: reverse lookup NON-M2M
+ * Reverse lookup NON-M2M (POIN 4 requirement)
+ *
  * Query:
- *  - fieldId
- *  - relatedEntryId
- *  - page? (default 1)
- *  - pageSize? (default 20)
+ *  - fieldId        : RELATION field
+ *  - relatedEntryId : entry yang menjadi target
+ *  - page?          : default 1
+ *  - pageSize?      : default 20
  *
  * Mengembalikan semua fromEntryId yang terkait ke relatedEntryId
- * untuk field RELATION tertentu.
+ * untuk field RELATION tertentu (reverse relation).
+ *
+ * Contoh use case:
+ *  - “Tampilkan semua artikel yang menarget brand X”
+ *  - “Semua produk yang menunjuk ke category Y”
  */
 router.get(
   "/content/relations/from-by-related",
@@ -147,18 +175,28 @@ router.get(
 
 /**
  * PATCH /content/relations/:fieldId/:fromEntryId/reorder
- * Set urutan relasi NON-M2M (ONE_TO_MANY)
+ * Set urutan relasi NON-M2M (ONE_TO_MANY) berdasarkan posisi baru.
+ *
+ * Params:
+ *  - fieldId     : RELATION field
+ *  - fromEntryId : entry sumber
+ *
  * Body:
- *  - toEntryIds: string[]   // urutan baru
+ *  - toEntryIds: string[]   // urutan baru target IDs
+ *
+ * Catatan:
+ *  - position di ContentRelation akan di-update mengikuti urutan array ini.
+ *  - Public API yang membaca relasi akan mendapat urutan yang sama,
+ *    karena relations.expander.js menghormati kolom position.
  */
 router.patch(
   "/content/relations/:fieldId/:fromEntryId/reorder",
   workspaceContext,
-  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS), // sesuai gaya kamu
+  authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
       const { fieldId, fromEntryId } = req.params;
-      const { toEntryIds } = req.body; // array urutan baru
+      const { toEntryIds } = req.body;
 
       if (!Array.isArray(toEntryIds)) {
         return res.status(400).json({ message: "toEntryIds must be array" });

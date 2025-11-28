@@ -87,6 +87,21 @@ ${urlsXml}
 });
 
 /**
+ * GET /:contentType/search
+ *
+ * Search entries untuk relation picker (public/admin sama-sama bisa pakai endpoint ini)
+ *
+ * NOTE:
+ * - Route ini didefinisikan SEBELUM pattern generic :contentType dan :slug,
+ *   supaya /:contentType/search tidak ketangkep sebagai slug = "search".
+ */
+router.get(
+  "/:contentType/search",
+  workspaceContext,
+  contentEntryController.searchForRelation
+);
+
+/**
  * GET /:contentType/seo-config
  *
  * Endpoint kecil untuk FE:
@@ -157,14 +172,28 @@ router.get("/:contentType/seo-config", workspaceContext, async (req, res) => {
  * List PUBLISHED ONLY + SEO fields
  *
  * Query:
- *  - q        : string (search seoTitle/slug/metaDescription)
- *  - page     : number (default 1)
- *  - pageSize : number (default 10, max 100)
- *  - sort     : "publishedAt:desc" default | "publishedAt:asc" | "seoTitle:asc" | ...
- *  - include  : "values" dan/atau "relations" (comma-separated)
- *  - relations: "author,brand,categories" (filter field RELATION by apiKey)
- *  - relationsDepth   : number (default 1; dibatasi 1..5 di sini)
- *  - relationsSummary : "basic" | "full" (full = target include values)
+ *  - q              : string (search seoTitle/slug/metaDescription)
+ *  - page           : number (default 1)
+ *  - pageSize       : number (default 10, max 100)
+ *  - sort           : "publishedAt:desc" (default) | "publishedAt:asc" | "seoTitle:asc" | ...
+ *
+ *  - include        : "values" dan/atau "relations" (comma-separated)
+ *      * include=values           -> sertakan fieldValue (payload konten)
+ *      * include=relations        -> aktifkan ekspansi relasi
+ *      * include=values,relations -> keduanya
+ *
+ *  - relations      : "author,brand,categories"
+ *      * daftar apiKey untuk field RELATION yang boleh diekspansi.
+ *      * jika kosong -> semua RELATION field pada model boleh diekspansi.
+ *
+ *  - relationsDepth : number (default 1; dibatasi 1..5)
+ *      * nilai <1 akan di-clamp ke 1
+ *      * nilai >5 akan di-clamp ke 5
+ *      * tidak melempar 400; hanya di-normalisasi.
+ *
+ *  - relationsSummary : "basic" | "full"
+ *      * basic -> target relasi dikembalikan ringkas (mis. id, slug, seoTitle, isPublished)
+ *      * full  -> boleh include field tambahan (mis. contentTypeId, publishedAt)
  */
 router.get("/:contentType", workspaceContext, async (req, res) => {
   try {
@@ -205,7 +234,13 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
         .map((s) => s.trim())
         .filter(Boolean)
     );
-    const depth = Math.max(1, Math.min(5, Number(relationsDepth || 1)));
+
+    // Clamp depth 1..5 (tidak melempar error; hanya normalisasi)
+    const depthRaw = Number(relationsDepth || 1);
+    const depth = Number.isFinite(depthRaw)
+      ? Math.max(1, Math.min(5, depthRaw))
+      : 1;
+
     const summary = relationsSummary === "full" ? "full" : "basic";
 
     // parsing sort
@@ -326,10 +361,15 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
  * Detail PUBLISHED ONLY + SEO fields
  *
  * Query:
- *  - include=values[,relations]
- *  - relations=author,brand,...
- *  - relationsDepth=1..5
- *  - relationsSummary=basic|full
+ *  - include           : "values" dan/atau "relations"
+ *  - relations         : daftar apiKey RELATION yang boleh diekspansi
+ *  - relationsDepth    : 1..5 (clamp, default 1)
+ *  - relationsSummary  : "basic" | "full"
+ *
+ * Behaviour relations:
+ *  - include=relations -> aktifkan ekspansi
+ *  - relationsDepth di-normalisasi ke rentang 1..5 (tanpa error 400)
+ *  - relationsSummary menentukan bentuk payload target relasi
  */
 router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
   try {
@@ -364,7 +404,12 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
         .map((s) => s.trim())
         .filter(Boolean)
     );
-    const depth = Math.max(1, Math.min(5, Number(relationsDepth || 1)));
+
+    const depthRaw = Number(relationsDepth || 1);
+    const depth = Number.isFinite(depthRaw)
+      ? Math.max(1, Math.min(5, depthRaw))
+      : 1;
+
     const summary = relationsSummary === "full" ? "full" : "basic";
 
     const selectBase = {
@@ -441,19 +486,5 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
     res.status(400).json({ message: err.message || "Server error" });
   }
 });
-
-/**
- * Search entries untuk relation picker (public/admin sama-sama bisa pakai endpoint ini)
- * GET /:contentType/search
- *
- * NOTE: route ini sebaiknya didefinisikan SEBELUM pattern generic :slug
- * supaya /:contentType/search tidak ketangkep sebagai slug = "search".
- * Di file ini kita sudah mengatur urutannya.
- */
-router.get(
-  "/:contentType/search",
-  workspaceContext,
-  contentEntryController.searchForRelation
-);
 
 export default router;

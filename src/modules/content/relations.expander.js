@@ -3,8 +3,15 @@ import prisma from "../../config/prismaClient.js";
 
 /**
  * Ambil field RELATION untuk suatu ContentType dan config-nya.
+ *
  * Skema:
- * - ContentField { id, apiKey, name, type: "RELATION", relation: { id, kind, targetContentTypeId } }
+ * - ContentField {
+ *     id,
+ *     apiKey,
+ *     name,
+ *     type: "RELATION",
+ *     relation: { id, kind, targetContentTypeId }
+ *   }
  */
 async function getRelationFields({ contentTypeId }) {
   const fields = await prisma.contentField.findMany({
@@ -29,17 +36,28 @@ async function getRelationFields({ contentTypeId }) {
 
 /**
  * Ambil link relasi secara bulk untuk sekumpulan entries & fields.
+ *
  * Skema link:
- * - ContentRelation:    { workspaceId, fieldId,         fromEntryId, toEntryId, position }
- * - ContentRelationM2M: { workspaceId, relationFieldId, fromEntryId, toEntryId, position }
+ * - ContentRelation:
+ *    { workspaceId, fieldId,         fromEntryId, toEntryId, position }
+ * - ContentRelationM2M:
+ *    { workspaceId, relationFieldId, fromEntryId, toEntryId, position }
  */
-async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relationFields }) {
+async function fetchRelationLinksBulk({
+  workspaceId = null,
+  fromEntryIds,
+  relationFields,
+}) {
   if (!relationFields?.length || !fromEntryIds?.length) {
     return { oneManyLinks: [], m2mLinks: [] };
   }
 
-  const hasM2M = relationFields.some((f) => f.relation?.kind === "MANY_TO_MANY");
-  const hasNonM2M = relationFields.some((f) => f.relation?.kind !== "MANY_TO_MANY");
+  const hasM2M = relationFields.some(
+    (f) => f.relation?.kind === "MANY_TO_MANY"
+  );
+  const hasNonM2M = relationFields.some(
+    (f) => f.relation?.kind !== "MANY_TO_MANY"
+  );
 
   let oneManyLinks = [];
   let m2mLinks = [];
@@ -57,7 +75,12 @@ async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relati
           ...(workspaceId ? { workspaceId } : {}),
         },
         // sertakan position untuk ordering
-        select: { fromEntryId: true, fieldId: true, toEntryId: true, position: true },
+        select: {
+          fromEntryId: true,
+          fieldId: true,
+          toEntryId: true,
+          position: true,
+        },
       });
     }
   }
@@ -75,7 +98,12 @@ async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relati
           ...(workspaceId ? { workspaceId } : {}),
         },
         // sertakan position untuk ordering
-        select: { fromEntryId: true, relationFieldId: true, toEntryId: true, position: true },
+        select: {
+          fromEntryId: true,
+          relationFieldId: true,
+          toEntryId: true,
+          position: true,
+        },
       });
     }
   }
@@ -84,18 +112,33 @@ async function fetchRelationLinksBulk({ workspaceId = null, fromEntryIds, relati
 }
 
 /**
- * Ambil ringkasan entry target (published-only).
- * summary:
- *  - "basic" => subset ringkas (id, slug, seoTitle, metaDescription, publishedAt, contentTypeId)
- *  - "full"  => include: { values: true } (otomatis dapat semua kolom termasuk contentTypeId)
+ * Ambil ringkasan entry target.
+ *
+ * mode:
+ *  - "basic" => subset ringkas:
+ *      { id, slug, seoTitle, metaDescription, publishedAt, contentTypeId }
+ *  - "full"  => include values (otomatis dapat semua kolom; lebih berat)
+ *
+ * scope:
+ *  - "public" => hanya isPublished = true
+ *  - "admin"  => abaikan filter isPublished (bisa lihat draft)
  */
-async function fetchEntrySummaries({ entryIds, summary = "basic" }) {
+async function fetchEntrySummaries({
+  entryIds,
+  mode = "basic",
+  scope = "public",
+}) {
   if (!entryIds || entryIds.length === 0) return [];
 
-  const includeValues = summary === "full";
+  const includeValues = mode === "full";
+
+  const where = {
+    id: { in: entryIds },
+    ...(scope === "public" ? { isPublished: true } : {}),
+  };
 
   return prisma.contentEntry.findMany({
-    where: { id: { in: entryIds }, isPublished: true },
+    where,
     orderBy: { publishedAt: "desc" },
     include: includeValues ? { values: true } : undefined,
     select: includeValues
@@ -123,8 +166,9 @@ async function expandRelationsDepth1({
   workspaceId = null,
   entries,
   relationFields,
-  summary = "basic",
+  mode = "basic",
   allowedFieldApiKeys = null, // Set([...]) atau null
+  scope = "public",
 }) {
   const out = new Map(entries.map((e) => [e.id, {}]));
   const targetContainers = new Map(); // targetId -> array of object references
@@ -135,7 +179,7 @@ async function expandRelationsDepth1({
 
   // Filter field berdasar whitelist API key bila ada
   const filtered = relationFields.filter(
-    (f) => !allowedFieldApiKeys || allowedFieldApiKeys.has(f.apiKey),
+    (f) => !allowedFieldApiKeys || allowedFieldApiKeys.has(f.apiKey)
   );
   if (filtered.length === 0) return { out, targetContainers };
 
@@ -154,7 +198,8 @@ async function expandRelationsDepth1({
 
   const targets = await fetchEntrySummaries({
     entryIds: Array.from(allTargetIds),
-    summary,
+    mode,
+    scope,
   });
 
   const targetById = new Map(targets.map((t) => [t.id, t]));
@@ -263,16 +308,33 @@ async function expandRelationsDepth1({
 
 /**
  * API utama untuk ekspansi relasi.
- * - entries         : array ContentEntry (hasil findMany/findFirst)
- * - contentTypeId   : ContentType.id untuk membaca daftar field RELATION (root)
- * - workspaceId     : opsional, untuk filter link relasi (multi-tenant)
- * - depth           : default 1, dibatasi maxDepth (5)
- * - summary         : "basic" | "full" (full = target include values)
- * - allowedFieldApiKeys : Set([...]) untuk whitelist field RELATION di root
  *
- * Hasil:
+ * Params:
+ *  - workspaceId        : string | null
+ *  - entries            : ContentEntry[] (hasil findMany / findFirst)
+ *  - contentTypeId      : ContentType.id untuk membaca daftar field RELATION (root)
+ *  - depth              : kedalaman ekspansi, default 1
+ *  - maxDepth           : batas maksimal depth (default 5)
+ *  - mode               : "basic" | "full"
+ *                         * basic -> target relasi ringkas (id, slug, seoTitle, metaDescription, publishedAt, contentTypeId)
+ *                         * full  -> target relasi include values (lebih berat)
+ *  - scope              : "public" | "admin"
+ *                         * public -> hanya target isPublished = true
+ *                         * admin  -> semua target (include draft)
+ *  - allowedFieldApiKeys: Set<string> | null (whitelist field RELATION di level root)
+ *                         * null -> semua RELATION field di-include
+ *
+ * Behaviour:
+ *  - depth akan di-clamp ke [0..maxDepth]
+ *  - depth === 0 -> tidak ada ekspansi (_relations kosong)
+ *  - depth >= 1  -> relasi level 1 diisi,
+ *                  depth > 1 -> target akan punya `_relations` lagi (rekursif)
+ *
+ * Return:
  *  - Map<entryId, { [fieldApiKey]: object | object[] }>
- *  - Kalau depth > 1, setiap target object bisa punya:
+ *
+ * Untuk depth > 1:
+ *  - Setiap object target bisa punya properti:
  *      _relations: { [fieldApiKey]: object | object[] }
  */
 export async function expandRelations({
@@ -280,13 +342,28 @@ export async function expandRelations({
   entries,
   contentTypeId,
   depth = 1,
-  summary = "basic",
+  maxDepth = 5,
+  mode, // "basic" | "full"
+  summary, // legacy name, kalau masih dipakai caller lama
+  scope = "public",
   allowedFieldApiKeys = null,
-}) {
+} = {}) {
   if (!entries || entries.length === 0) return new Map();
 
-  const maxDepth = 5;
-  const safeDepth = Math.max(1, Math.min(depth ?? 1, maxDepth));
+  // mode efektif: pakai mode kalau ada, kalau tidak pakai summary (backward compat),
+  // default ke "basic"
+  const effectiveMode = mode || summary || "basic";
+
+  // Clamp depth ke [0..maxDepth]
+  const depthRaw = Number(depth ?? 1);
+  const safeDepth = Number.isFinite(depthRaw)
+    ? Math.min(Math.max(depthRaw, 0), maxDepth)
+    : 1;
+
+  // Kalau depth 0 → tidak expand relasi sama sekali
+  if (safeDepth === 0) {
+    return new Map(entries.map((e) => [e.id, {}]));
+  }
 
   // Ambil field RELATION untuk CT root
   const relationFields = await getRelationFields({ contentTypeId });
@@ -296,8 +373,9 @@ export async function expandRelations({
     workspaceId,
     entries,
     relationFields,
-    summary,
+    mode: effectiveMode,
     allowedFieldApiKeys,
+    scope,
   });
 
   // Kalau cuma depth=1, atau tidak ada target relasi, selesai
@@ -325,8 +403,10 @@ export async function expandRelations({
       entries: ctEntries,
       contentTypeId: ctId,
       depth: safeDepth - 1,
-      summary,
-      // di level dalam, biasanya semua relation boleh
+      maxDepth,
+      mode: effectiveMode,
+      scope,
+      // di level dalam, semua field RELATION boleh
       allowedFieldApiKeys: null,
     });
 

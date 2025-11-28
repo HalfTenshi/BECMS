@@ -8,16 +8,38 @@ import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
 
 const router = express.Router();
 
+/**
+ * Admin Content Relation M2M
+ *
+ * Semua endpoint di file ini:
+ *  - Mengelola relasi MANY_TO_MANY (M2M) via tabel ContentRelationM2M
+ *  - Hanya bisa diakses jika:
+ *      - auth OK
+ *      - workspaceContext sudah resolve workspace
+ *      - authorize(ACTIONS.X, RESOURCES.CONTENT_RELATIONS) berhasil
+ *
+ * Catatan arsitektur:
+ *  - Public API (GET /api/public/content/...) membaca data M2M
+ *    melalui relations.expander.js yang melakukan bulk fetch dan
+ *    menghormati kolom position.
+ *  - Route admin di sini fokus ke mutasi data (attach, detach, reorder).
+ */
+
 // Proteksi dasar: semua endpoint di sini butuh auth + workspace
 router.use(auth, workspaceContext);
 
 /**
  * POST /content/relations/m2m/attach
- * Tambah relasi M2M (banyak target sekaligus)
+ * Tambah relasi M2M (banyak target sekaligus).
+ *
  * Body:
- *  - fieldId
- *  - fromEntryId
- *  - toEntryIds: string[]
+ *  - fieldId      : RELATION field M2M
+ *  - fromEntryId  : entry sumber
+ *  - toEntryIds   : string[] (daftar entry target)
+ *
+ * Behaviour:
+ *  - Implementasi biasanya menggunakan createMany + skipDuplicates,
+ *    sehingga pemanggilan ulang menjadi idempotent.
  */
 router.post(
   "/content/relations/m2m/attach",
@@ -54,11 +76,17 @@ router.post(
 
 /**
  * DELETE /content/relations/m2m/detach
- * Hapus relasi M2M
+ * Hapus relasi M2M untuk kombinasi (fieldId, fromEntryId, toEntryIds[]).
+ *
  * Body:
- *  - fieldId
- *  - fromEntryId
- *  - toEntryIds: string[]
+ *  - fieldId      : RELATION field M2M
+ *  - fromEntryId  : entry sumber
+ *  - toEntryIds   : string[]
+ *
+ * Behaviour:
+ *  - Menghapus baris pada tabel ContentRelationM2M.
+ *  - Public API akan otomatis merefleksikan perubahan ini,
+ *    karena relations.expander.js membaca langsung dari tabel tersebut.
  */
 router.delete(
   "/content/relations/m2m/detach",
@@ -95,9 +123,19 @@ router.delete(
 
 /**
  * PATCH /content/relations/m2m/:fieldId/:fromEntryId/reorder
- * Set urutan baru M2M (position)
+ * Set urutan baru M2M (position) berdasarkan toEntryIds[].
+ *
+ * Params:
+ *  - fieldId      : RELATION field M2M
+ *  - fromEntryId  : entry sumber
+ *
  * Body:
- *  - toEntryIds: string[]
+ *  - toEntryIds: string[] (urutan baru target IDs)
+ *
+ * Behaviour:
+ *  - position di ContentRelationM2M akan di-update mengikuti urutan array ini.
+ *  - Public API yang membaca M2M akan menampilkan relasi dengan urutan sama,
+ *    karena expander mengurutkan berdasarkan kolom position.
  */
 router.patch(
   "/content/relations/m2m/:fieldId/:fromEntryId/reorder",
@@ -128,11 +166,18 @@ router.patch(
 
 /**
  * GET /content/relations/m2m/list
+ *
  * Query:
- *  - fieldId
- *  - fromEntryId
- *  - page? (default 1)
- *  - pageSize? (default 20)
+ *  - fieldId      : RELATION field M2M
+ *  - fromEntryId  : entry sumber
+ *  - page?        : default 1
+ *  - pageSize?    : default 20
+ *
+ * Mengembalikan daftar target (toEntryId) yang terhubung ke satu sumber
+ * pada field RELATION M2M tertentu.
+ *
+ * Cocok untuk:
+ *  - UI admin yang butuh pagination atas relasi M2M.
  */
 router.get(
   "/content/relations/m2m/list",
@@ -166,13 +211,19 @@ router.get(
 /**
  * GET /content/relations/m2m/from-by-related
  * Reverse lookup M2M:
+ *
+ * Query:
  *  - fieldId         : RELATION field (MANY_TO_MANY)
- *  - relatedEntryId  : entry yang menjadi "target"
+ *  - relatedEntryId  : entry yang menjadi target
  *  - page?           : default 1
  *  - pageSize?       : default 20
  *
  * Mengembalikan semua fromEntryId yang terkait ke relatedEntryId
  * untuk relasi MANY_TO_MANY tertentu.
+ *
+ * Contoh use case:
+ *  - “Semua artikel yang memiliki tag X”
+ *  - “Semua produk yang berada di kategori M2M Y”
  */
 router.get(
   "/content/relations/m2m/from-by-related",

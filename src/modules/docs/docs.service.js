@@ -13,7 +13,12 @@ function toJSONSchema(field) {
 
   switch (field.type) {
     case "TEXT":
-      return { type: "string", ...base, maxLength: field.maxLength ?? undefined, minLength: field.minLength ?? undefined };
+      return {
+        type: "string",
+        ...base,
+        maxLength: field.maxLength ?? undefined,
+        minLength: field.minLength ?? undefined,
+      };
 
     case "RICH_TEXT":
       return { type: "string", ...base };
@@ -33,10 +38,18 @@ function toJSONSchema(field) {
       return { type: "string", format: "date-time", ...base };
 
     case "JSON":
-      return { type: ["object", "array"], ...base, additionalProperties: true };
+      return {
+        type: ["object", "array"],
+        ...base,
+        additionalProperties: true,
+      };
 
     case "SLUG":
-      return { type: "string", ...base, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" };
+      return {
+        type: "string",
+        ...base,
+        pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      };
 
     case "RELATION": {
       const many = !!cfg.many;
@@ -46,7 +59,9 @@ function toJSONSchema(field) {
       return {
         ...schema,
         ...base,
-        description: `${base.description} (relation to ${cfg.targetTypeApiKey || "another content type"})`,
+        description: `${base.description} (relation to ${
+          cfg.targetTypeApiKey || "another content type"
+        })`,
       };
     }
 
@@ -55,7 +70,10 @@ function toJSONSchema(field) {
         type: "object",
         ...base,
         properties: {
-          urls: { type: "array", items: { type: "string", pattern: "^/uploads/" } },
+          urls: {
+            type: "array",
+            items: { type: "string", pattern: "^/uploads/" },
+          },
           files: {
             type: "array",
             items: {
@@ -81,7 +99,9 @@ function toJSONSchema(field) {
 
 /**
  * Bangun JSON Schema level entry untuk sebuah ContentType
- * Menyertakan field built-in: slug, seoTitle, metaDescription, keywords, isPublished, publishedAt, timestamps
+ * Menyertakan field built-in:
+ *  - slug, seoTitle, metaDescription, keywords
+ *  - isPublished, publishedAt, timestamps
  */
 function buildSchemaForType(ct) {
   const properties = {
@@ -89,9 +109,17 @@ function buildSchemaForType(ct) {
     slug: { type: "string", nullable: true },
     seoTitle: { type: "string", nullable: true },
     metaDescription: { type: "string", nullable: true },
-    keywords: { type: "array", items: { type: "string" }, nullable: true },
+    keywords: {
+      type: "array",
+      items: { type: "string" },
+      nullable: true,
+    },
     isPublished: { type: "boolean" },
-    publishedAt: { type: "string", format: "date-time", nullable: true },
+    publishedAt: {
+      type: "string",
+      format: "date-time",
+      nullable: true,
+    },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   };
@@ -110,6 +138,9 @@ function buildSchemaForType(ct) {
   };
 }
 
+/**
+ * Contoh payload entry untuk satu ContentType
+ */
 function exampleForType(ct) {
   const ex = {
     id: "entry_123",
@@ -122,6 +153,7 @@ function exampleForType(ct) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+
   for (const f of ct.fields) {
     const key = f.apiKey || f.name;
     switch (f.type) {
@@ -145,7 +177,9 @@ function exampleForType(ct) {
         ex[key] = "sample-slug";
         break;
       case "RELATION":
-        ex[key] = f.config?.many ? ["entry_other_id_1", "entry_other_id_2"] : "entry_other_id";
+        ex[key] = f.config?.many
+          ? ["entry_other_id_1", "entry_other_id_2"]
+          : "entry_other_id";
         break;
       case "MEDIA":
         ex[key] = { urls: ["/uploads/example.png"] };
@@ -154,12 +188,16 @@ function exampleForType(ct) {
         ex[key] = null;
     }
   }
+
   return ex;
 }
 
 const docsService = {
   /**
-   * Dok untuk satu content type berdasarkan apiKey
+   * Dok untuk satu ContentType berdasarkan apiKey.
+   *
+   * Menjelaskan juga query params relasi di endpoints:
+   *  - relations, relationsDepth, relationsSummary
    */
   async buildContentTypeDoc(apiKey) {
     const ct = await prisma.contentType.findFirst({
@@ -168,47 +206,189 @@ const docsService = {
     });
     if (!ct) throw new Error("ContentType not found");
 
+    const schema = buildSchemaForType(ct);
+
     return {
       name: ct.name,
       apiKey: ct.apiKey,
-      schema: buildSchemaForType(ct),
+      schema,
       endpoints: {
-        list: `/api/public/content/${ct.apiKey}`,
-        getById: `/api/public/content/${ct.apiKey}/:id`,
+        list: {
+          method: "GET",
+          path: `/api/public/content/${ct.apiKey}`,
+          description:
+            "List published entries dengan dukungan filter SEO & relasi.",
+          query: {
+            q: "optional search (seoTitle/slug/metaDescription)",
+            page: "integer, default 1",
+            pageSize: "integer, default 10, max 100",
+            sort: 'mis. "publishedAt:desc", "seoTitle:asc"',
+            include:
+              'optional: "values,relations" (comma-separated) untuk include field values & relasi',
+            relations:
+              'optional: aktifkan ekspansi relasi. Contoh: "1" / "true" / "relations"',
+            relationsDepth:
+              "optional: integer 1..5 (default 1). Nilai di luar range akan di-clamp.",
+            relationsSummary:
+              'optional: "basic" | "full" (default "basic"). "full" meng-include values pada target.',
+          },
+          responseExample: {
+            rows: [exampleForType(ct)],
+            total: 1,
+            page: 1,
+            pageSize: 10,
+            pages: 1,
+          },
+        },
+        getBySlug: {
+          method: "GET",
+          path: `/api/public/content/${ct.apiKey}/{slug}`,
+          description:
+            "Detail satu entry published, dengan dukungan include values & relasi.",
+          pathParams: {
+            slug: "slug entry",
+          },
+          query: {
+            include:
+              'optional: "values,relations" (comma-separated). "values" untuk field values, "relations" untuk relasi.',
+            relations:
+              'optional: whitelist field relasi via apiKey, contoh "author,brand". Jika kosong → semua field RELATION.',
+            relationsDepth:
+              "optional: integer 1..5 (default 1). Dipakai untuk ekspansi nested relasi.",
+            relationsSummary:
+              'optional: "basic" | "full" (default "basic"). "full" meng-include values pada target.',
+          },
+          responseExample: exampleForType(ct),
+        },
       },
       example: exampleForType(ct),
     };
   },
 
   /**
-   * OpenAPI 3.1 spec untuk semua content type publish API
+   * OpenAPI 3.1 spec untuk semua ContentType yang punya public API.
+   *
+   * Termasuk dokumentasi:
+   *  - Query params relasi: relations, relationsDepth, relationsSummary
+   *  - Response wrapper: { rows, total, page, pageSize, pages }
    */
   async buildOpenAPISpec() {
-    const types = await prisma.contentType.findMany({ include: { fields: true } });
+    const types = await prisma.contentType.findMany({
+      include: { fields: true },
+    });
 
     const paths = {};
     const components = { schemas: {} };
 
     for (const ct of types) {
       const schemaName = `Content_${ct.apiKey}`;
+      const listSchemaName = `Content_${ct.apiKey}_ListResponse`;
+
+      // Schema entry
       components.schemas[schemaName] = buildSchemaForType(ct);
 
-      // List
+      // Schema list response (rows + meta pagination)
+      components.schemas[listSchemaName] = {
+        type: "object",
+        properties: {
+          rows: {
+            type: "array",
+            items: { $ref: `#/components/schemas/${schemaName}` },
+          },
+          total: { type: "integer", minimum: 0 },
+          page: { type: "integer", minimum: 1 },
+          pageSize: { type: "integer", minimum: 1 },
+          pages: { type: "integer", minimum: 1 },
+        },
+        required: ["rows", "total", "page", "pageSize", "pages"],
+      };
+
+      // GET /api/public/content/:contentType
       paths[`/api/public/content/${ct.apiKey}`] = {
         get: {
+          tags: ["Public Content"],
           summary: `List ${ct.name}`,
-          description: `Return published ${ct.name} entries.`,
+          description:
+            "Return published entries untuk content type ini. Mendukung SEO search + ekspansi relasi.",
           parameters: [
-            { name: "page", in: "query", schema: { type: "integer", minimum: 1 } },
-            { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } },
-            // tambahkan filter umum bila perlu
+            {
+              name: "q",
+              in: "query",
+              required: false,
+              description:
+                "optional search (seoTitle/slug/metaDescription, case-insensitive)",
+              schema: { type: "string" },
+            },
+            {
+              name: "page",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 1, default: 1 },
+            },
+            {
+              name: "pageSize",
+              in: "query",
+              required: false,
+              schema: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+            },
+            {
+              name: "sort",
+              in: "query",
+              required: false,
+              description:
+                'mis. "publishedAt:desc", "publishedAt:asc", "seoTitle:asc"',
+              schema: { type: "string", default: "publishedAt:desc" },
+            },
+            {
+              name: "include",
+              in: "query",
+              required: false,
+              description:
+                'comma-separated: "values", "relations" (contoh: "values,relations")',
+              schema: { type: "string" },
+            },
+            {
+              name: "relations",
+              in: "query",
+              required: false,
+              description:
+                'aktifkan ekspansi relasi dan/atau whitelist field RELATION via apiKey, mis. "author,brand". Jika kosong → semua RELATION field.',
+              schema: { type: "string" },
+            },
+            {
+              name: "relationsDepth",
+              in: "query",
+              required: false,
+              description:
+                "kedalaman ekspansi relasi (nested), 1..5; nilai di luar range akan di-clamp.",
+              schema: {
+                type: "integer",
+                minimum: 1,
+                maximum: 5,
+                default: 1,
+              },
+            },
+            {
+              name: "relationsSummary",
+              in: "query",
+              required: false,
+              description:
+                '"basic" (ringkas) atau "full" (include values di target). Default "basic".',
+              schema: {
+                type: "string",
+                enum: ["basic", "full"],
+                default: "basic",
+              },
+            },
           ],
           responses: {
             "200": {
               description: "OK",
               content: {
                 "application/json": {
-                  schema: { type: "array", items: { $ref: `#/components/schemas/${schemaName}` } },
+                  schema: {
+                    $ref: `#/components/schemas/${listSchemaName}`,
+                  },
                 },
               },
             },
@@ -216,15 +396,72 @@ const docsService = {
         },
       };
 
-      // Get by ID
-      paths[`/api/public/content/${ct.apiKey}/{id}`] = {
+      // GET /api/public/content/:contentType/:slug
+      paths[`/api/public/content/${ct.apiKey}/{slug}`] = {
         get: {
-          summary: `Get ${ct.name} by id`,
-          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+          tags: ["Public Content"],
+          summary: `Get ${ct.name} by slug`,
+          description:
+            "Detail satu entry published berdasarkan slug. Mendukung include values & ekspansi relasi.",
+          parameters: [
+            {
+              name: "slug",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "include",
+              in: "query",
+              required: false,
+              description:
+                'comma-separated: "values", "relations" (contoh: "values,relations")',
+              schema: { type: "string" },
+            },
+            {
+              name: "relations",
+              in: "query",
+              required: false,
+              description:
+                'whitelist field RELATION via apiKey, mis. "author,brand". Jika kosong → semua RELATION field.',
+              schema: { type: "string" },
+            },
+            {
+              name: "relationsDepth",
+              in: "query",
+              required: false,
+              description:
+                "kedalaman ekspansi relasi (nested), 1..5; nilai di luar range akan di-clamp.",
+              schema: {
+                type: "integer",
+                minimum: 1,
+                maximum: 5,
+                default: 1,
+              },
+            },
+            {
+              name: "relationsSummary",
+              in: "query",
+              required: false,
+              description:
+                '"basic" (ringkas) atau "full" (include values di target). Default "basic".',
+              schema: {
+                type: "string",
+                enum: ["basic", "full"],
+                default: "basic",
+              },
+            },
+          ],
           responses: {
             "200": {
               description: "OK",
-              content: { "application/json": { schema: { $ref: `#/components/schemas/${schemaName}` } } },
+              content: {
+                "application/json": {
+                  schema: {
+                    $ref: `#/components/schemas/${schemaName}`,
+                  },
+                },
+              },
             },
             "404": { description: "Not Found" },
           },
@@ -234,7 +471,12 @@ const docsService = {
 
     return {
       openapi: "3.1.0",
-      info: { title: "BECMS Public API", version: "1.0.0" },
+      info: {
+        title: "BECMS Public Content API",
+        version: "1.0.0",
+        description:
+          "Public API untuk mengakses published content entries, termasuk dukungan SEO & relasi (relations, relationsDepth, relationsSummary).",
+      },
       paths,
       components,
     };

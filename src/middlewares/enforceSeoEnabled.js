@@ -1,5 +1,10 @@
+// =========================================================
 // src/middlewares/enforceSeoEnabled.js
+// =========================================================
+
 import prisma from "../config/prismaClient.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 /**
  * Middleware optional untuk membuang SEO fields dari req.body
@@ -33,7 +38,7 @@ export async function enforceSeoEnabled(req, res, next) {
 
     let { contentTypeId } = req.body || {};
 
-    // Optional: kalau kamu pakai pattern route /:contentType/entries
+    // Optional: kalau pakai pattern route /:contentType/entries
     // dan body tidak mengirim contentTypeId, middleware bisa resolve
     // dari apiKey di URL.
     if (!contentTypeId && req.params?.contentType) {
@@ -89,9 +94,21 @@ export async function enforceSeoEnabled(req, res, next) {
 
     return next();
   } catch (err) {
-    // Kalau ada error di middleware ini, jangan bikin 500 yang aneh;
-    // lempar ke error handler global.
-    return next(err);
+    // Kalau sudah ApiError, lempar apa adanya
+    if (err instanceof ApiError) {
+      return next(err);
+    }
+
+    // Kalau ada error di middleware ini, jangan bikin 500 yang "aneh";
+    // bungkus rapi sebagai 500 dengan kode VALIDATION_ERROR (karena
+    // konteksnya SEO config / validation).
+    return next(
+      ApiError.internal("Failed to enforce SEO configuration", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "SEO_ENFORCE_FAILED",
+        details: { originalError: err.message },
+      })
+    );
   }
 }
 

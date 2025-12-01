@@ -1,10 +1,14 @@
+// src/modules/auth/auth.service.js
+
 import authRepository from "./auth.repository.js";
 import { hashPassword, comparePassword } from "../../utils/password.js";
 import { signAccessToken } from "../../utils/jwt.js"; // ⬅️ reset token TIDAK pakai JWT lagi
 import { OAuth2Client } from "google-auth-library";
 import prisma from "../../config/prismaClient.js";
-import { sendMail } from "../../lib/mailer.js";         // ⬅️ util kirim email (nodemailer)
+import { sendMail } from "../../lib/mailer.js"; // ⬅️ util kirim email (nodemailer)
 import { generateToken, sha256 } from "../../utils/token.js"; // ⬅️ helper token & hash
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const TTL_MIN = Number(process.env.RESET_TOKEN_TTL_MINUTES || 30);
@@ -13,10 +17,21 @@ const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 class AuthService {
   // ===================== REGISTER =====================
   async register({ name, email, password }) {
-    if (!name || !email || !password) throw new Error("name, email, password are required");
+    if (!name || !email || !password) {
+      throw ApiError.badRequest("name, email, password are required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "REGISTER_MISSING_FIELDS",
+      });
+    }
 
-    const existing = await authRepository.findUserByEmail(email);
-    if (existing) throw new Error("Email already registered");
+    const existing = await authRepository.findUserByEmail(email.toLowerCase());
+    if (existing) {
+      throw ApiError.conflict("Email already registered", {
+        code: ERROR_CODES.REGISTER_FAILED,
+        reason: "EMAIL_ALREADY_REGISTERED",
+        details: { email: email.toLowerCase() },
+      });
+    }
 
     const passwordHash = await hashPassword(password);
     const user = await authRepository.createUser({
@@ -27,23 +42,52 @@ class AuthService {
     });
 
     const token = signAccessToken({ userId: user.id });
-    return { user: { id: user.id, name: user.name, email: user.email }, token };
+    return {
+      user: { id: user.id, name: user.name, email: user.email },
+      token,
+    };
   }
 
   // ===================== LOGIN =====================
   async login({ email, password }) {
-    if (!email || !password) throw new Error("email and password are required");
+    if (!email || !password) {
+      throw ApiError.badRequest("email and password are required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "LOGIN_MISSING_FIELDS",
+      });
+    }
 
     const user = await authRepository.findUserByEmail(email.toLowerCase());
-    if (!user) throw new Error("Invalid credentials");
+    if (!user) {
+      throw ApiError.unauthorized("Invalid credentials", {
+        code: ERROR_CODES.LOGIN_FAILED,
+        reason: "LOGIN_INVALID_CREDENTIALS",
+      });
+    }
 
     const ok = await comparePassword(password, user.passwordHash || "");
-    if (!ok) throw new Error("Invalid credentials");
-    if (user.status !== "ACTIVE") throw new Error("Account not active");
+    if (!ok) {
+      throw ApiError.unauthorized("Invalid credentials", {
+        code: ERROR_CODES.LOGIN_FAILED,
+        reason: "LOGIN_INVALID_CREDENTIALS",
+      });
+    }
+
+    if (user.status !== "ACTIVE") {
+      throw ApiError.forbidden("Account not active", {
+        code: ERROR_CODES.ACCOUNT_INACTIVE,
+        reason: "ACCOUNT_NOT_ACTIVE",
+      });
+    }
 
     const token = signAccessToken({ userId: user.id });
     return {
-      user: { id: user.id, name: user.name, email: user.email, status: user.status },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+      },
       token,
     };
   }
@@ -60,7 +104,13 @@ class AuthService {
    * ALWAYS return ok (anti user enumeration).
    */
   async requestReset({ email }) {
-    if (!email) throw new Error("email is required");
+    if (!email) {
+      throw ApiError.badRequest("email is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RESET_EMAIL_REQUIRED",
+      });
+    }
+
     const user = await authRepository.findUserByEmail(email.toLowerCase());
 
     // Balasan selalu ok agar tidak bisa deteksi akun terdaftar
@@ -101,7 +151,12 @@ class AuthService {
    * Validasi: token ada, belum dipakai, belum kadaluarsa.
    */
   async resetPassword({ token, newPassword }) {
-    if (!token || !newPassword) throw new Error("token and newPassword are required");
+    if (!token || !newPassword) {
+      throw ApiError.badRequest("token and newPassword are required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RESET_MISSING_FIELDS",
+      });
+    }
 
     const tokenHash = sha256(token);
     const now = new Date();
@@ -112,7 +167,11 @@ class AuthService {
     });
 
     if (!rec || rec.usedAt || rec.expiresAt <= now) {
-      throw new Error("Token invalid or expired");
+      // Pesan tetap generic untuk keamanan
+      throw ApiError.badRequest("Token invalid or expired", {
+        code: ERROR_CODES.TOKEN_INVALID,
+        reason: "RESET_TOKEN_INVALID_OR_EXPIRED",
+      });
     }
 
     const passwordHash = await hashPassword(newPassword);
@@ -120,8 +179,13 @@ class AuthService {
     // Transaksi: update pw + tandai token used + revoke token lain
     await prisma.$transaction([
       prisma.user.update({ where: { id: rec.userId }, data: { passwordHash } }),
-      prisma.passwordResetToken.update({ where: { id: rec.id }, data: { usedAt: now } }),
-      prisma.passwordResetToken.deleteMany({ where: { userId: rec.userId, usedAt: null } }),
+      prisma.passwordResetToken.update({
+        where: { id: rec.id },
+        data: { usedAt: now },
+      }),
+      prisma.passwordResetToken.deleteMany({
+        where: { userId: rec.userId, usedAt: null },
+      }),
     ]);
 
     return { ok: true };
@@ -131,6 +195,13 @@ class AuthService {
   // === GOOGLE ONE-TAP / SIGN-IN WITH GOOGLE (OPTION B)
   // ===========================================================
   async loginWithGoogleIdToken(idToken) {
+    if (!idToken) {
+      throw ApiError.badRequest("idToken is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "GOOGLE_ID_TOKEN_REQUIRED",
+      });
+    }
+
     // 1) Verifikasi token dari Google
     const ticket = await googleClient.verifyIdToken({
       idToken,
@@ -139,8 +210,18 @@ class AuthService {
     const payload = ticket.getPayload(); // { sub, email, name, picture, email_verified, ... }
 
     const email = (payload.email || "").toLowerCase();
-    if (!email) throw new Error("Google account has no email");
-    if (payload.email_verified === false) throw new Error("Google email is not verified");
+    if (!email) {
+      throw ApiError.badRequest("Google account has no email", {
+        code: ERROR_CODES.LOGIN_FAILED,
+        reason: "GOOGLE_NO_EMAIL",
+      });
+    }
+    if (payload.email_verified === false) {
+      throw ApiError.badRequest("Google email is not verified", {
+        code: ERROR_CODES.LOGIN_FAILED,
+        reason: "GOOGLE_EMAIL_NOT_VERIFIED",
+      });
+    }
 
     // 2) Cari account Google terdahulu
     const existingAccount = await prisma.account.findUnique({
@@ -183,7 +264,12 @@ class AuthService {
       });
     }
 
-    if (user.status !== "ACTIVE") throw new Error("Account not active");
+    if (user.status !== "ACTIVE") {
+      throw ApiError.forbidden("Account not active", {
+        code: ERROR_CODES.ACCOUNT_INACTIVE,
+        reason: "ACCOUNT_NOT_ACTIVE",
+      });
+    }
 
     // 5) (Opsional) pastikan membership workspace default
     const ws = await prisma.workspace.upsert({

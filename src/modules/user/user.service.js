@@ -1,5 +1,7 @@
 // src/modules/user/user.service.js
 import userRepository from "./user.repository.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 class UserService {
   list(query) {
@@ -15,18 +17,39 @@ class UserService {
   }
 
   async get(id) {
+    if (!id) {
+      throw ApiError.badRequest("User id is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "USER_ID_REQUIRED",
+        resource: "USERS",
+      });
+    }
+
     const user = await userRepository.findById(id);
     if (!user) {
-      throw new Error("User not found");
+      throw ApiError.notFound("User not found", {
+        code: ERROR_CODES.USER_NOT_FOUND,
+        reason: "USER_NOT_FOUND",
+        resource: "USERS",
+        details: { id },
+      });
     }
     return user;
   }
 
   async create(body) {
-    const { name, email, pictureUrl, passwordHash, status } = body;
+    const { name, email, pictureUrl, passwordHash, status } = body || {};
 
     if (!name || !email) {
-      throw new Error("name and email are required");
+      throw ApiError.badRequest("name and email are required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "USER_VALIDATION_FAILED",
+        resource: "USERS",
+        details: {
+          hasName: !!name,
+          hasEmail: !!email,
+        },
+      });
     }
 
     // passwordHash opsional: biasanya dibuat di auth flow,
@@ -41,23 +64,34 @@ class UserService {
   }
 
   async update(id, body) {
-    await this.get(id);
+    await this.get(id); // lempar ApiError kalau tidak ditemukan
 
     const allowed = ["name", "email", "pictureUrl"]; // status via endpoint khusus
     const data = Object.fromEntries(
-      Object.entries(body).filter(([k]) => allowed.includes(k))
+      Object.entries(body || {}).filter(([k]) => allowed.includes(k))
     );
 
     if (Object.keys(data).length === 0) {
-      throw new Error("No updatable fields");
+      throw ApiError.badRequest("No updatable fields", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "USER_NO_UPDATABLE_FIELDS",
+        resource: "USERS",
+      });
     }
 
     return userRepository.update(id, data);
   }
 
   async updateStatus(id, status) {
-    if (!["ACTIVE", "SUSPENDED", "DEACTIVATED"].includes(status)) {
-      throw new Error("Invalid status");
+    const allowed = ["ACTIVE", "SUSPENDED", "DEACTIVATED"];
+
+    if (!allowed.includes(status)) {
+      throw ApiError.badRequest("Invalid status", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "USER_INVALID_STATUS",
+        resource: "USERS",
+        details: { status, allowed },
+      });
     }
 
     await this.get(id);
@@ -79,7 +113,12 @@ class UserService {
       );
 
     if (!member) {
-      throw new Error("Workspace membership not found");
+      throw ApiError.notFound("Workspace membership not found", {
+        code: ERROR_CODES.MEMBER_NOT_FOUND,
+        reason: "WORKSPACE_MEMBER_NOT_FOUND",
+        resource: "USERS",
+        details: { userId, workspaceId },
+      });
     }
 
     const { user, workspace, role } = member;

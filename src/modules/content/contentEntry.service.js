@@ -23,23 +23,12 @@ import { ERROR_CODES } from "../../constants/errorCodes.js";
  * Requirement:
  *  - seoTitle > MAX_SEO_TITLE_LENGTH → 422 + SEO_TITLE_TOO_LONG
  *  - metaDescription > MAX_META_DESCRIPTION_LENGTH → 422 + SEO_DESCRIPTION_TOO_LONG
- *
- * Pastikan 422 keluar dengan format standar:
- * {
- *   "error": {
- *     "status": 422,
- *     "code": "SEO_TITLE_TOO_LONG",
- *     "reason": "SEO_VALIDATION_FAILED",
- *     ...
- *   }
- * }
  */
 function validateSeoLengths({ seoTitle, metaDescription }) {
   if (typeof seoTitle === "string") {
     const len = seoTitle.trim().length;
     if (len > MAX_SEO_TITLE_LENGTH) {
-      throw new ApiError(
-        422,
+      throw ApiError.unprocessable(
         `seoTitle must be at most ${MAX_SEO_TITLE_LENGTH} characters`,
         {
           code: ERROR_CODES.SEO_TITLE_TOO_LONG,
@@ -58,8 +47,7 @@ function validateSeoLengths({ seoTitle, metaDescription }) {
   if (typeof metaDescription === "string") {
     const len = metaDescription.trim().length;
     if (len > MAX_META_DESCRIPTION_LENGTH) {
-      throw new ApiError(
-        422,
+      throw ApiError.unprocessable(
         `metaDescription must be at most ${MAX_META_DESCRIPTION_LENGTH} characters`,
         {
           code: ERROR_CODES.SEO_DESCRIPTION_TOO_LONG,
@@ -98,8 +86,10 @@ class ContentEntryService {
     } = {}
   ) {
     if (!workspaceId) {
-      throw new ApiError(400, "workspaceId is required", {
-        code: "WORKSPACE_REQUIRED",
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        reason: "VALIDATION_ERROR",
+        resource: "CONTENT_ENTRIES",
       });
     }
 
@@ -113,8 +103,11 @@ class ContentEntryService {
         select: { id: true },
       });
       if (!ct) {
-        throw new ApiError(404, "ContentType not found", {
-          code: "CONTENT_TYPE_NOT_FOUND",
+        throw ApiError.notFound("ContentType not found", {
+          code: ERROR_CODES.CONTENT_TYPE_NOT_FOUND,
+          reason: "CONTENT_TYPE_NOT_FOUND",
+          resource: "CONTENT_TYPES",
+          details: { workspaceId, apiKey: contentTypeApiKey },
         });
       }
       finalContentTypeId = ct.id;
@@ -157,8 +150,11 @@ class ContentEntryService {
   async getById(id, workspaceId) {
     const entry = await contentEntryRepository.findById(id, workspaceId);
     if (!entry) {
-      throw new ApiError(404, "Entry not found", {
-        code: "CONTENT_ENTRY_NOT_FOUND",
+      throw ApiError.notFound("Entry not found", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        reason: "ENTRY_NOT_FOUND",
+        resource: "CONTENT_ENTRIES",
+        details: { id, workspaceId },
       });
     }
     return entry;
@@ -179,8 +175,11 @@ class ContentEntryService {
       include: { contentType: true, values: true },
     });
     if (!entry) {
-      throw new ApiError(404, "Entry not found", {
-        code: "CONTENT_ENTRY_NOT_FOUND",
+      throw ApiError.notFound("Entry not found", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        reason: "ENTRY_NOT_FOUND",
+        resource: "CONTENT_ENTRIES",
+        details: { id, workspaceId },
       });
     }
 
@@ -254,8 +253,11 @@ class ContentEntryService {
       select: { id: true },
     });
     if (!ct) {
-      throw new ApiError(404, "ContentType not found", {
-        code: "CONTENT_TYPE_NOT_FOUND",
+      throw ApiError.notFound("ContentType not found", {
+        code: ERROR_CODES.CONTENT_TYPE_NOT_FOUND,
+        reason: "CONTENT_TYPE_NOT_FOUND",
+        resource: "CONTENT_TYPES",
+        details: { workspaceId, apiKey: contentTypeApiKey },
       });
     }
     return ct.id;
@@ -330,8 +332,11 @@ class ContentEntryService {
       select: { id: true },
     });
     if (!ct) {
-      throw new ApiError(404, "ContentType not found", {
-        code: "CONTENT_TYPE_NOT_FOUND",
+      throw ApiError.notFound("ContentType not found", {
+        code: ERROR_CODES.CONTENT_TYPE_NOT_FOUND,
+        reason: "CONTENT_TYPE_NOT_FOUND",
+        resource: "CONTENT_TYPES",
+        details: { workspaceId, apiKey: contentTypeApiKey },
       });
     }
 
@@ -348,10 +353,14 @@ class ContentEntryService {
   // ===================== CREATE =====================
   async create(data) {
     if (!data?.workspaceId || !data?.contentTypeId) {
-      throw new ApiError(400, "workspaceId and contentTypeId required", {
-        code: "CONTENT_ENTRY_CREATE_VALIDATION_ERROR",
-        reason: "VALIDATION_ERROR",
-      });
+      throw ApiError.badRequest(
+        "workspaceId and contentTypeId are required",
+        {
+          code: ERROR_CODES.CONTENT_ENTRY_CREATE_VALIDATION_ERROR,
+          reason: "VALIDATION_ERROR",
+          resource: "CONTENT_ENTRIES",
+        }
+      );
     }
 
     // Normalisasi SEO (trim & keywords → array)
@@ -372,8 +381,14 @@ class ContentEntryService {
       select: { id: true, seoEnabled: true },
     });
     if (!contentType) {
-      throw new ApiError(404, "ContentType not found", {
-        code: "CONTENT_TYPE_NOT_FOUND",
+      throw ApiError.notFound("ContentType not found", {
+        code: ERROR_CODES.CONTENT_TYPE_NOT_FOUND,
+        reason: "CONTENT_TYPE_NOT_FOUND",
+        resource: "CONTENT_TYPES",
+        details: {
+          workspaceId: data.workspaceId,
+          contentTypeId: data.contentTypeId,
+        },
       });
     }
 
@@ -396,8 +411,15 @@ class ContentEntryService {
         finalSlug
       );
       if (existingSlug) {
-        throw new ApiError(409, "Slug already in use", {
-          code: "SLUG_CONFLICT",
+        throw ApiError.conflict("Slug already in use", {
+          code: ERROR_CODES.SLUG_CONFLICT,
+          reason: "SLUG_ALREADY_EXISTS",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            workspaceId: data.workspaceId,
+            contentTypeId: data.contentTypeId,
+            slug: finalSlug,
+          },
         });
       }
     }
@@ -463,8 +485,11 @@ class ContentEntryService {
   async update(id, workspaceId, data) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      throw new ApiError(404, "Entry not found", {
-        code: "CONTENT_ENTRY_NOT_FOUND",
+      throw ApiError.notFound("Entry not found", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        reason: "ENTRY_NOT_FOUND",
+        resource: "CONTENT_ENTRIES",
+        details: { id, workspaceId },
       });
     }
 
@@ -508,8 +533,16 @@ class ContentEntryService {
         id
       );
       if (existingSlug) {
-        throw new ApiError(409, "Slug already in use", {
-          code: "SLUG_CONFLICT",
+        throw ApiError.conflict("Slug already in use", {
+          code: ERROR_CODES.SLUG_CONFLICT,
+          reason: "SLUG_ALREADY_EXISTS",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            workspaceId: existing.workspaceId,
+            contentTypeId: existing.contentTypeId,
+            slug: finalSlug,
+            entryId: id,
+          },
         });
       }
     }
@@ -608,11 +641,15 @@ class ContentEntryService {
   }
 
   // ===================== DELETE / PUBLISH =====================
+
   async delete(id, workspaceId) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      throw new ApiError(404, "Entry not found", {
-        code: "CONTENT_ENTRY_NOT_FOUND",
+      throw ApiError.notFound("Entry not found", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        reason: "ENTRY_NOT_FOUND",
+        resource: "CONTENT_ENTRIES",
+        details: { id, workspaceId },
       });
     }
     await contentEntryRepository.delete(id, workspaceId);
@@ -622,8 +659,11 @@ class ContentEntryService {
   async publish(id, workspaceId) {
     const existing = await contentEntryRepository.findById(id, workspaceId);
     if (!existing) {
-      throw new ApiError(404, "Entry not found", {
-        code: "CONTENT_ENTRY_NOT_FOUND",
+      throw ApiError.notFound("Entry not found", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        reason: "ENTRY_NOT_FOUND",
+        resource: "CONTENT_ENTRIES",
+        details: { id, workspaceId },
       });
     }
     const updated = await contentEntryRepository.publish(id, workspaceId);

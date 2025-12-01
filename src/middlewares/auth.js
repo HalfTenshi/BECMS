@@ -1,74 +1,102 @@
+// =========================================================
 // src/middlewares/auth.js
-// Middleware autentikasi JWT (industry-standard clean version)
+// =========================================================
 
 import { verifyToken } from "../utils/jwt.js";
 import prisma from "../config/prismaClient.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 /**
- * Auth middleware
- * - Validasi Bearer token
- * - Decode JWT -> req.user
- * - Load user ringkas dari database
- * - Validasi status ACTIVE
+ * Authentication middleware
+ *
+ * - Expect header: Authorization: Bearer <token>
+ * - Verifies JWT
+ * - Load user dari database
+ * - Set ke req.user dan req.authTokenPayload
+ *
+ * Contoh error (akan diformat oleh errorHandler.js):
+ * 401 Unauthorized
+ * {
+ *   success: false,
+ *   error: {
+ *     status: 401,
+ *     code: "AUTH_INVALID_TOKEN",
+ *     reason: "AUTH_INVALID_TOKEN",
+ *     detail: "Unauthorized",
+ *     ...
+ *   }
+ * }
  */
-export const auth = async (req, res, next) => {
+export async function auth(req, res, next) {
   try {
-    // --- Ambil token dari header ---
     const header = req.headers.authorization || "";
-    if (!header.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing or invalid Authorization header" });
-    }
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
-    const token = header.replace("Bearer ", "").trim();
     if (!token) {
-      return res.status(401).json({ error: "Token not provided" });
+      throw ApiError.unauthorized("Unauthorized", {
+        code: ERROR_CODES.AUTH_MISSING_TOKEN,
+        reason: "AUTH_MISSING_TOKEN",
+        resource: "AUTH",
+        action: "VERIFY_TOKEN",
+      });
     }
 
-    // --- Verify & decode token ---
-    let decoded;
+    let payload;
     try {
-      decoded = verifyToken(token);
-    } catch (err) {
-      return res.status(401).json({ error: "Invalid or expired token" });
+      // payload biasanya: { userId, ... }
+      payload = verifyToken(token);
+    } catch (e) {
+      throw ApiError.unauthorized("Unauthorized", {
+        code: ERROR_CODES.AUTH_INVALID_TOKEN,
+        reason: "AUTH_INVALID_TOKEN",
+        resource: "AUTH",
+        action: "VERIFY_TOKEN",
+      });
     }
 
-    // decoded: { userId, workspaceId?, iat, exp }
-    const userId = decoded.userId;
-    const workspaceId = decoded.workspaceId || null;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Token payload missing userId" });
+    if (!payload || !payload.userId) {
+      throw ApiError.unauthorized("Unauthorized", {
+        code: ERROR_CODES.AUTH_INVALID_TOKEN,
+        reason: "AUTH_INVALID_PAYLOAD",
+        resource: "AUTH",
+        action: "VERIFY_TOKEN",
+      });
     }
 
-    // Inject ke req.user
-    req.user = { id: userId, workspaceId };
-
-    // --- Load user profile minimal ---
-    const profile = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        status: true,
-        pictureUrl: true,
-      },
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
     });
 
-    if (!profile) {
-      return res.status(401).json({ error: "User not found" });
+    if (!user) {
+      throw ApiError.unauthorized("Unauthorized", {
+        code: ERROR_CODES.AUTH_USER_NOT_FOUND,
+        reason: "AUTH_USER_NOT_FOUND",
+        resource: "USERS",
+        action: "READ",
+      });
     }
 
-    if (profile.status !== "ACTIVE") {
-      return res.status(403).json({ error: "Account not active" });
+    // Optional: kalau kamu pakai enum AccountStatus di User
+    if (user.status && user.status !== "ACTIVE") {
+      throw ApiError.forbidden("Account is not active", {
+        code: ERROR_CODES.AUTH_ACCOUNT_INACTIVE,
+        reason: "AUTH_ACCOUNT_INACTIVE",
+        resource: "USERS",
+        action: "READ",
+      });
     }
 
-    req.user.profile = profile;
+    // Inject ke req untuk dipakai middleware lain / controller
+    req.user = user;
+    req.authTokenPayload = payload;
 
-    // --- Sukses ---
-    next();
+    return next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
-    return res.status(401).json({ error: "Authentication failed" });
+    // ApiError akan langsung diformat oleh errorHandler
+    return next(err);
   }
-};
+}
+
+// Biar kompatibel kalau ada import default
+export default auth;

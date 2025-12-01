@@ -2,6 +2,7 @@
 import authService from "./auth.service.js";
 import { ok, created } from "../../utils/response.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 class AuthController {
   // ============================
@@ -14,7 +15,7 @@ class AuthController {
     } catch (e) {
       return next(
         new ApiError(400, e.message || "Failed to register user", {
-          code: "REGISTER_FAILED",
+          code: ERROR_CODES.REGISTER_FAILED,
         })
       );
     }
@@ -30,7 +31,7 @@ class AuthController {
     } catch (e) {
       return next(
         new ApiError(401, e.message || "Invalid login credentials", {
-          code: "LOGIN_FAILED",
+          code: ERROR_CODES.LOGIN_FAILED,
         })
       );
     }
@@ -44,7 +45,7 @@ class AuthController {
       if (!req.user?.profile) {
         return next(
           new ApiError(401, "Authentication required", {
-            code: "AUTH_REQUIRED",
+            code: ERROR_CODES.AUTH_REQUIRED,
           })
         );
       }
@@ -53,7 +54,7 @@ class AuthController {
     } catch (e) {
       return next(
         new ApiError(400, e.message || "Failed to load profile", {
-          code: "ME_FAILED",
+          code: ERROR_CODES.ME_FAILED,
         })
       );
     }
@@ -70,9 +71,13 @@ class AuthController {
       return ok(res, data);
     } catch (e) {
       return next(
-        new ApiError(400, e.message || "Failed to request password reset", {
-          code: "REQUEST_RESET_FAILED",
-        })
+        new ApiError(
+          400,
+          e.message || "Failed to request password reset",
+          {
+            code: ERROR_CODES.REQUEST_RESET_FAILED,
+          }
+        )
       );
     }
   }
@@ -87,7 +92,7 @@ class AuthController {
     } catch (e) {
       return next(
         new ApiError(400, e.message || "Failed to reset password", {
-          code: "RESET_PASSWORD_FAILED",
+          code: ERROR_CODES.RESET_PASSWORD_FAILED,
         })
       );
     }
@@ -102,7 +107,7 @@ class AuthController {
       if (!idToken) {
         return next(
           new ApiError(400, "idToken is required", {
-            code: "GOOGLE_IDTOKEN_REQUIRED",
+            code: ERROR_CODES.GOOGLE_IDTOKEN_REQUIRED,
           })
         );
       }
@@ -112,7 +117,7 @@ class AuthController {
     } catch (e) {
       return next(
         new ApiError(401, e.message || "Google login failed", {
-          code: "GOOGLE_LOGIN_FAILED",
+          code: ERROR_CODES.GOOGLE_LOGIN_FAILED,
         })
       );
     }

@@ -12,6 +12,8 @@ import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
 import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 import assetService from "../modules/asset/asset.service.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 const router = express.Router();
 
@@ -64,7 +66,13 @@ router.post(
   async (req, res, next) => {
     try {
       if (!req.files?.length) {
-        return res.status(400).json({ message: "No files uploaded" });
+        return next(
+          ApiError.badRequest("No files uploaded", {
+            code: ERROR_CODES.ASSET_VALIDATION_ERROR,
+            reason: "VALIDATION_ERROR",
+            resource: "UPLOADS",
+          })
+        );
       }
 
       const workspaceId =
@@ -72,9 +80,13 @@ router.post(
       const userId = req.user?.id || null;
 
       if (!workspaceId) {
-        return res
-          .status(400)
-          .json({ message: "workspaceId is required", code: "WORKSPACE_REQUIRED" });
+        return next(
+          ApiError.badRequest("workspaceId is required", {
+            code: ERROR_CODES.WORKSPACE_REQUIRED,
+            reason: "VALIDATION_ERROR",
+            resource: "UPLOADS",
+          })
+        );
       }
 
       // Folder root untuk semua uploads
@@ -90,14 +102,21 @@ router.post(
         // Deteksi mime dari buffer — jangan percaya ekstensi saja
         const detected = await fileTypeFromBuffer(f.buffer);
         if (!detected) {
-          throw new Error("Cannot detect file type");
+          throw ApiError.badRequest("Cannot detect file type", {
+            code: ERROR_CODES.ASSET_VALIDATION_ERROR,
+            reason: "ASSET_TYPE_UNDETECTABLE",
+            resource: "UPLOADS",
+          });
         }
         const { mime, ext } = detected;
 
         if (!ALLOW_MIME.includes(mime)) {
-          const err = new Error(`Mime not allowed: ${mime}`);
-          err.status = 400;
-          throw err;
+          throw ApiError.badRequest(`Mime not allowed: ${mime}`, {
+            code: ERROR_CODES.ASSET_VALIDATION_ERROR,
+            reason: "ASSET_MIME_NOT_ALLOWED",
+            resource: "UPLOADS",
+            details: { mime },
+          });
         }
 
         const filename = randomNameWithExt(f.originalname, `.${ext}`);
@@ -160,7 +179,14 @@ router.post(
       return res.json({ success: true, files: saved });
     } catch (err) {
       if (err instanceof multer.MulterError) {
-        return res.status(400).json({ message: err.message });
+        // Map MulterError ke ApiError standar
+        return next(
+          ApiError.badRequest(err.message, {
+            code: ERROR_CODES.ASSET_VALIDATION_ERROR,
+            reason: "MULTER_ERROR",
+            resource: "UPLOADS",
+          })
+        );
       }
       return next(err);
     }

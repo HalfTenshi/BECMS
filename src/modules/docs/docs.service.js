@@ -1,5 +1,7 @@
 // src/modules/docs/docs.service.js
 import prisma from "../../config/prismaClient.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 /**
  * Ubah definisi ContentField → JSON Schema (OpenAPI 3.1 compatible)
@@ -204,7 +206,14 @@ const docsService = {
       where: { apiKey },
       include: { fields: true, workspace: true },
     });
-    if (!ct) throw new Error("ContentType not found");
+    if (!ct) {
+      throw ApiError.notFound("ContentType not found", {
+        code: ERROR_CODES.DOCS_NOT_FOUND,
+        reason: "DOCS_CONTENT_TYPE_NOT_FOUND",
+        resource: "DOCS",
+        details: { apiKey },
+      });
+    }
 
     const schema = buildSchemaForType(ct);
 

@@ -1,5 +1,7 @@
 // src/modules/content/entry.validation.js
 import prisma from "../../config/prismaClient.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 // Mapping kolom nilai di FieldValue per tipe
 const TYPE_TO_VALUE_KEY = {
@@ -146,7 +148,15 @@ export async function enforceOnPayload({
 
     // Required (umum, dengan pengecualian SLUG/RELATION karena diproses khusus)
     if (f.isRequired && !hasInput && f.type !== "SLUG" && f.type !== "RELATION") {
-      throw new Error(`Field "${f.apiKey}" is required`);
+      throw ApiError.unprocessable("Validation failed", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "CONTENT_ENTRY_FIELD_REQUIRED",
+        resource: "CONTENT_ENTRIES",
+        details: {
+          field: f.apiKey,
+          message: `Field "${f.apiKey}" is required`,
+        },
+      });
     }
 
     // Generate slug from slugFrom & kosong
@@ -154,7 +164,18 @@ export async function enforceOnPayload({
       if (f.slugFrom) {
         const src = values.find((x) => x.apiKey === f.slugFrom);
         const srcVal = (src?.value ?? "").toString();
-        if (!srcVal) throw new Error(`Slug source "${f.slugFrom}" is empty`);
+        if (!srcVal) {
+          throw ApiError.unprocessable("Validation failed", {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            reason: "CONTENT_ENTRY_SLUG_SOURCE_EMPTY",
+            resource: "CONTENT_ENTRIES",
+            details: {
+              field: f.apiKey,
+              sourceField: f.slugFrom,
+              message: `Slug source "${f.slugFrom}" is empty`,
+            },
+          });
+        }
         const slug = srcVal
           .toLowerCase()
           .normalize("NFKD")
@@ -182,18 +203,42 @@ export async function enforceOnPayload({
         (id) => typeof id === "string" && id.trim() !== ""
       );
       if (f.isRequired && cleanIds.length === 0) {
-        throw new Error(`Field "${f.apiKey}" is required`);
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_REQUIRED",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            message: `Field "${f.apiKey}" is required`,
+          },
+        });
       }
       // batasi min/maxCount bila ada di config
       if (f?.config?.minCount != null && cleanIds.length < f.config.minCount) {
-        throw new Error(
-          `Field "${f.apiKey}" requires at least ${f.config.minCount} related item(s)`
-        );
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_RELATION_MIN_COUNT",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            minCount: f.config.minCount,
+            actual: cleanIds.length,
+            message: `Field "${f.apiKey}" requires at least ${f.config.minCount} related item(s)`,
+          },
+        });
       }
       if (f?.config?.maxCount != null && cleanIds.length > f.config.maxCount) {
-        throw new Error(
-          `Field "${f.apiKey}" exceeds max related item(s): ${f.config.maxCount}`
-        );
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_RELATION_MAX_COUNT",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            maxCount: f.config.maxCount,
+            actual: cleanIds.length,
+            message: `Field "${f.apiKey}" exceeds max related item(s): ${f.config.maxCount}`,
+          },
+        });
       }
       result.relations.push({ fieldId: f.id, targetIds: cleanIds });
       continue;
@@ -202,7 +247,17 @@ export async function enforceOnPayload({
     // MEDIA → lewat validator khusus + simpan normalized JSON
     if (f.type === "MEDIA") {
       const { errors, normalizedJson } = validateMedia(f, v.value);
-      if (errors.length) throw new Error(errors.join("; "));
+      if (errors.length) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_MEDIA_INVALID",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            errors,
+          },
+        });
+      }
       const key = pickValueKey("MEDIA"); // valueJson
       result.fieldValues.push({
         fieldId: f.id,
@@ -220,45 +275,139 @@ export async function enforceOnPayload({
           },
           select: { id: true },
         });
-        if (duplicate) throw new Error(`${f.apiKey} must be unique`);
+        if (duplicate) {
+          throw ApiError.unprocessable("Validation failed", {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            reason: "CONTENT_ENTRY_FIELD_UNIQUE_VIOLATION",
+            resource: "CONTENT_ENTRIES",
+            details: {
+              field: f.apiKey,
+              message: `${f.apiKey} must be unique`,
+            },
+          });
+        }
       }
       continue;
     }
 
     // Tipe biasa (TEXT/RICH_TEXT/NUMBER/BOOLEAN/DATE/JSON/SLUG)
     const key = pickValueKey(f.type);
-    if (!key) throw new Error(`Unsupported field type: ${f.type}`);
+    if (!key) {
+      throw ApiError.unprocessable("Validation failed", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "CONTENT_ENTRY_FIELD_UNSUPPORTED_TYPE",
+        resource: "CONTENT_ENTRIES",
+        details: {
+          field: f.apiKey,
+          type: f.type,
+          message: `Unsupported field type: ${f.type}`,
+        },
+      });
+    }
 
     // Bounds & length
     if (
       (f.type === "TEXT" || f.type === "RICH_TEXT" || f.type === "SLUG") &&
       typeof v.value === "string"
     ) {
-      if (f.minLength != null && v.value.length < f.minLength)
-        throw new Error(`${f.apiKey} length < minLength`);
-      if (f.maxLength != null && v.value.length > f.maxLength)
-        throw new Error(`${f.apiKey} length > maxLength`);
+      if (f.minLength != null && v.value.length < f.minLength) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_MIN_LENGTH",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            minLength: f.minLength,
+            actual: v.value.length,
+            message: `${f.apiKey} length < minLength`,
+          },
+        });
+      }
+      if (f.maxLength != null && v.value.length > f.maxLength) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_MAX_LENGTH",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            maxLength: f.maxLength,
+            actual: v.value.length,
+            message: `${f.apiKey} length > maxLength`,
+          },
+        });
+      }
     }
     if (f.type === "NUMBER") {
       const num = Number(v.value);
-      if (Number.isNaN(num)) throw new Error(`${f.apiKey} must be a number`);
-      if (f.minNumber != null && num < f.minNumber)
-        throw new Error(`${f.apiKey} < minNumber`);
-      if (f.maxNumber != null && num > f.maxNumber)
-        throw new Error(`${f.apiKey} > maxNumber`);
+      if (Number.isNaN(num)) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_NOT_NUMBER",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            value: v.value,
+            message: `${f.apiKey} must be a number`,
+          },
+        });
+      }
+      if (f.minNumber != null && num < f.minNumber) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_MIN_NUMBER",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            minNumber: f.minNumber,
+            actual: num,
+            message: `${f.apiKey} < minNumber`,
+          },
+        });
+      }
+      if (f.maxNumber != null && num > f.maxNumber) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_MAX_NUMBER",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            maxNumber: f.maxNumber,
+            actual: num,
+            message: `${f.apiKey} > maxNumber`,
+          },
+        });
+      }
     }
     if (f.type === "DATE" && v.value) {
       const d = new Date(v.value);
-      if (isNaN(d.getTime())) throw new Error(`${f.apiKey} must be a valid date`);
+      if (isNaN(d.getTime())) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_INVALID_DATE",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            value: v.value,
+            message: `${f.apiKey} must be a valid date`,
+          },
+        });
+      }
     }
     if (f.type === "JSON" && v.value != null && typeof v.value !== "object") {
       // izinkan string JSON, tapi jika bukan object/array dan bukan JSON valid → error
       try {
         JSON.parse(String(v.value));
       } catch {
-        throw new Error(
-          `${f.apiKey} must be an object/array or valid JSON string`
-        );
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_INVALID_JSON",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            value: v.value,
+            message: `${f.apiKey} must be an object/array or valid JSON string`,
+          },
+        });
       }
     }
 
@@ -276,7 +425,17 @@ export async function enforceOnPayload({
         },
         select: { id: true },
       });
-      if (exist) throw new Error(`${f.apiKey} must be unique`);
+      if (exist) {
+        throw ApiError.unprocessable("Validation failed", {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "CONTENT_ENTRY_FIELD_UNIQUE_VIOLATION",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: f.apiKey,
+            message: `${f.apiKey} must be unique`,
+          },
+        });
+      }
     }
 
     result.fieldValues.push({

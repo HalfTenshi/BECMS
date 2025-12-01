@@ -7,6 +7,8 @@ import { auth } from "../middlewares/auth.js";
 import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
 import { ACTIONS, RESOURCES } from "../constants/permissions.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 import contentEntryController from "../modules/content/contentEntry.controller.js";
 
@@ -30,8 +32,19 @@ const seoRules = [
     .custom((value) => {
       if (Array.isArray(value)) return true;
       if (typeof value === "string") return true; // "a,b,c" diizinkan
-      throw new Error(
-        "keywords must be an array of strings or a comma-separated string"
+
+      // Hindari Error generic → pakai ApiError agar konsisten ke errorHandler
+      throw ApiError.badRequest(
+        "keywords must be an array of strings or a comma-separated string",
+        {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "VALIDATION_ERROR",
+          resource: "CONTENT_ENTRIES",
+          details: {
+            field: "keywords",
+            expected: "string[] | comma-separated string",
+          },
+        }
       );
     }),
 ];

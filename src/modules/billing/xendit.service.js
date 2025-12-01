@@ -3,6 +3,8 @@
 
 import axios from "axios";
 import crypto from "crypto";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 const XENDIT_BASE_URL = process.env.XENDIT_BASE_URL || "https://api.xendit.co";
 const XENDIT_SECRET_KEY = process.env.XENDIT_SECRET_KEY || "";
@@ -12,7 +14,10 @@ const DEFAULT_MAX_RETRIES = Number(process.env.XENDIT_MAX_RETRIES || "3");
 // Helper: bikin instance axios untuk Xendit
 function createXenditClient() {
   if (!XENDIT_SECRET_KEY) {
-    throw new Error("XENDIT_SECRET_KEY is not set in environment");
+    throw ApiError.internal("XENDIT_SECRET_KEY is not set in environment", {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      reason: "BILLING_CONFIG_INVALID",
+    });
   }
 
   return axios.create({
@@ -27,7 +32,7 @@ function createXenditClient() {
     },
     maxRedirects: 0,
     validateStatus(status) {
-      // biarkan 4xx/5xx tetap dikembalikan sebagai response (bukan throw)
+      // biarkan 4xx/5xx tetap dikembalikan sebagai response (bukan throw axios)
       return status >= 200 && status < 500;
     },
   });
@@ -62,7 +67,12 @@ async function withRetry(fn, { maxRetries = DEFAULT_MAX_RETRIES } = {}) {
     }
   }
 
-  throw lastError;
+  // Bungkus lastError sebagai ApiError 502 (Bad Gateway)
+  throw ApiError.internal("Failed to call Xendit API after retries", {
+    code: ERROR_CODES.VALIDATION_ERROR,
+    reason: "BILLING_API_ERROR",
+    details: { message: lastError?.message },
+  });
 }
 
 /**
@@ -72,6 +82,9 @@ async function withRetry(fn, { maxRetries = DEFAULT_MAX_RETRIES } = {}) {
  * - rawBody: Buffer dari express.raw()
  * - headers: req.headers
  * - secret: biasanya pakai ENV XENDIT_WEBHOOK_SECRET
+ *
+ * NOTE: Kalau signature invalid, fungsi ini hanya return false.
+ * Kalau kamu ingin lempar error dari route, gunakan ApiError di route handler.
  */
 export function validateWebhookSignature(rawBody, headers, secret) {
   const usedSecret = secret || process.env.XENDIT_WEBHOOK_SECRET;
@@ -118,10 +131,16 @@ class XenditBillingService {
     customer,
   }) {
     if (!workspaceId || !planId) {
-      throw new Error("workspaceId and planId are required");
+      throw ApiError.badRequest("workspaceId and planId are required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_CREATE_INVOICE_MISSING_FIELDS",
+      });
     }
     if (!amount || Number(amount) <= 0) {
-      throw new Error("amount must be > 0");
+      throw ApiError.badRequest("amount must be > 0", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_AMOUNT_INVALID",
+      });
     }
 
     const client = createXenditClient();
@@ -152,12 +171,11 @@ class XenditBillingService {
     const res = await withRetry(() => client.post("/v2/invoices", payload));
 
     if (res.status < 200 || res.status >= 300) {
-      const err = new Error(
-        `Failed to create Xendit invoice (status ${res.status})`
-      );
-      err.response = res.data;
-      err.status = res.status;
-      throw err;
+      throw new ApiError(res.status, `Failed to create Xendit invoice`, {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_API_ERROR",
+        details: res.data,
+      });
     }
 
     return res.data;
@@ -169,7 +187,12 @@ class XenditBillingService {
    * - invoiceId: id invoice Xendit (bukan external_id)
    */
   async getInvoiceById(invoiceId) {
-    if (!invoiceId) throw new Error("invoiceId is required");
+    if (!invoiceId) {
+      throw ApiError.badRequest("invoiceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_INVOICE_ID_REQUIRED",
+      });
+    }
 
     const client = createXenditClient();
 
@@ -178,12 +201,11 @@ class XenditBillingService {
     );
 
     if (res.status < 200 || res.status >= 300) {
-      const err = new Error(
-        `Failed to get Xendit invoice (status ${res.status})`
-      );
-      err.response = res.data;
-      err.status = res.status;
-      throw err;
+      throw new ApiError(res.status, `Failed to get Xendit invoice`, {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_API_ERROR",
+        details: res.data,
+      });
     }
 
     return res.data;
@@ -193,7 +215,12 @@ class XenditBillingService {
    * Ambil invoice berdasarkan external_id (kalau kamu simpan external_id di DB).
    */
   async getInvoiceByExternalId(externalId) {
-    if (!externalId) throw new Error("externalId is required");
+    if (!externalId) {
+      throw ApiError.badRequest("externalId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_EXTERNAL_ID_REQUIRED",
+      });
+    }
 
     const client = createXenditClient();
 
@@ -206,12 +233,15 @@ class XenditBillingService {
     );
 
     if (res.status < 200 || res.status >= 300) {
-      const err = new Error(
-        `Failed to get Xendit invoice by external_id (status ${res.status})`
+      throw new ApiError(
+        res.status,
+        `Failed to get Xendit invoice by external_id`,
+        {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "BILLING_API_ERROR",
+          details: res.data,
+        }
       );
-      err.response = res.data;
-      err.status = res.status;
-      throw err;
     }
 
     // Dokumen Xendit biasanya balikin array untuk external_id
@@ -224,7 +254,12 @@ class XenditBillingService {
    * Xendit endpoint: POST /v2/invoices/{id}/expire
    */
   async expireInvoice(invoiceId) {
-    if (!invoiceId) throw new Error("invoiceId is required");
+    if (!invoiceId) {
+      throw ApiError.badRequest("invoiceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "BILLING_INVOICE_ID_REQUIRED",
+      });
+    }
 
     const client = createXenditClient();
 
@@ -233,12 +268,15 @@ class XenditBillingService {
     );
 
     if (res.status < 200 || res.status >= 300) {
-      const err = new Error(
-        `Failed to expire Xendit invoice (status ${res.status})`
+      throw new ApiError(
+        res.status,
+        `Failed to expire Xendit invoice`,
+        {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          reason: "BILLING_API_ERROR",
+          details: res.data,
+        }
       );
-      err.response = res.data;
-      err.status = res.status;
-      throw err;
     }
 
     return res.data;

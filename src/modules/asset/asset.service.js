@@ -1,6 +1,9 @@
 // src/modules/asset/asset.service.js
+
 import crypto from "crypto";
 import assetRepo from "./asset.repository.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 function sha256(buf) {
   return crypto.createHash("sha256").update(buf).digest("hex");
@@ -10,7 +13,11 @@ class AssetService {
   async list(opts) {
     const { workspaceId } = opts || {};
     if (!workspaceId) {
-      throw new Error("workspaceId is required");
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_WORKSPACE_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
 
     return assetRepo.list({
@@ -28,34 +35,56 @@ class AssetService {
 
   async get({ id, workspaceId }) {
     if (!workspaceId) {
-      throw new Error("workspaceId is required");
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_WORKSPACE_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
     if (!id) {
-      throw new Error("id is required");
+      throw ApiError.badRequest("id is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
 
     const a = await assetRepo.getById(id, workspaceId);
     if (!a) {
-      const e = new Error("Asset not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Asset not found", {
+        code: ERROR_CODES.ASSET_NOT_FOUND,
+        reason: "ASSET_NOT_FOUND",
+        resource: "ASSETS",
+        details: { id, workspaceId },
+      });
     }
     return a;
   }
 
   async remove({ id, workspaceId }) {
     if (!workspaceId) {
-      throw new Error("workspaceId is required");
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_WORKSPACE_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
     if (!id) {
-      throw new Error("id is required");
+      throw ApiError.badRequest("id is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
 
     const existing = await assetRepo.getById(id, workspaceId);
     if (!existing) {
-      const e = new Error("Asset not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Asset not found", {
+        code: ERROR_CODES.ASSET_NOT_FOUND,
+        reason: "ASSET_NOT_FOUND",
+        resource: "ASSETS",
+        details: { id, workspaceId },
+      });
     }
 
     // (opsional) hapus file fisik juga kalau mau — butuh path ke /uploads
@@ -65,17 +94,28 @@ class AssetService {
 
   async update({ id, workspaceId, data }) {
     if (!workspaceId) {
-      throw new Error("workspaceId is required");
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_WORKSPACE_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
     if (!id) {
-      throw new Error("id is required");
+      throw ApiError.badRequest("id is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
 
     const existing = await assetRepo.getById(id, workspaceId);
     if (!existing) {
-      const e = new Error("Asset not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Asset not found", {
+        code: ERROR_CODES.ASSET_NOT_FOUND,
+        reason: "ASSET_NOT_FOUND",
+        resource: "ASSETS",
+        details: { id, workspaceId },
+      });
     }
 
     // Batasi field yang boleh diupdate (misalnya hanya metadata, bukan url/mime)
@@ -115,7 +155,11 @@ class AssetService {
    */
   async ingestOne({ workspaceId, userId, fileMeta }) {
     if (!workspaceId) {
-      throw new Error("workspaceId is required");
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "ASSET_WORKSPACE_ID_REQUIRED",
+        resource: "ASSETS",
+      });
     }
 
     const {
@@ -164,6 +208,7 @@ class AssetService {
         const existing = await assetRepo.findByChecksum(checksum);
         if (existing) return existing;
       }
+      // Error lain biar lewat ke errorHandler (bisa 500)
       throw err;
     }
   }

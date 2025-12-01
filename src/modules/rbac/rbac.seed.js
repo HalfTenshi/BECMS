@@ -1,6 +1,8 @@
 // src/modules/rbac/rbac.seed.js
 import prisma from "../../config/prismaClient.js";
 import { ACTIONS, MODULE_KEYS } from "./rbac.constants.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 // ---------------------------------------------------------------
 // ROLE CONFIG
@@ -94,27 +96,69 @@ const ROLE_PERMISSION_MATRIX = {
   [ROLE_KEYS.OWNER]: "ALL", // khusus: dapat semua permission di workspace tsb
 
   [ROLE_KEYS.ADMIN]: [
-    { module: MODULE_KEYS.USERS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
-    { module: MODULE_KEYS.WORKSPACES, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
-    { module: MODULE_KEYS.ROLES, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.USERS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
+    {
+      module: MODULE_KEYS.WORKSPACES,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
+    {
+      module: MODULE_KEYS.ROLES,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
     { module: MODULE_KEYS.PERMISSIONS, actions: [ACTIONS.READ] },
 
-    { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
-    { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.CONTENT_TYPES,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
+    {
+      module: MODULE_KEYS.CONTENT_FIELDS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
     {
       module: MODULE_KEYS.CONTENT_ENTRIES,
-      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE, ACTIONS.PUBLISH],
+      actions: [
+        ACTIONS.CREATE,
+        ACTIONS.READ,
+        ACTIONS.UPDATE,
+        ACTIONS.DELETE,
+        ACTIONS.PUBLISH,
+      ],
     },
-    { module: MODULE_KEYS.CONTENT_RELATIONS, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
-    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    {
+      module: MODULE_KEYS.CONTENT_RELATIONS,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
+    {
+      module: MODULE_KEYS.CONTENT_SEO,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
 
-    { module: MODULE_KEYS.PLANS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.PLANS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
 
-    { module: MODULE_KEYS.PRODUCTS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
-    { module: MODULE_KEYS.BRANDS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.PRODUCTS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
+    {
+      module: MODULE_KEYS.BRANDS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
 
-    { module: MODULE_KEYS.ASSETS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE] },
-    { module: MODULE_KEYS.UPLOADS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.DELETE] },
+    {
+      module: MODULE_KEYS.ASSETS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.DELETE],
+    },
+    {
+      module: MODULE_KEYS.UPLOADS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.DELETE],
+    },
   ],
 
   [ROLE_KEYS.EDITOR]: [
@@ -125,10 +169,19 @@ const ROLE_PERMISSION_MATRIX = {
       module: MODULE_KEYS.CONTENT_ENTRIES,
       actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.PUBLISH],
     },
-    { module: MODULE_KEYS.CONTENT_RELATIONS, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
-    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    {
+      module: MODULE_KEYS.CONTENT_RELATIONS,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
+    {
+      module: MODULE_KEYS.CONTENT_SEO,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
 
-    { module: MODULE_KEYS.ASSETS, actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE] },
+    {
+      module: MODULE_KEYS.ASSETS,
+      actions: [ACTIONS.CREATE, ACTIONS.READ, ACTIONS.UPDATE],
+    },
     { module: MODULE_KEYS.UPLOADS, actions: [ACTIONS.CREATE, ACTIONS.READ] },
   ],
 
@@ -145,8 +198,14 @@ const ROLE_PERMISSION_MATRIX = {
     { module: MODULE_KEYS.CONTENT_TYPES, actions: [ACTIONS.READ] },
     { module: MODULE_KEYS.CONTENT_FIELDS, actions: [ACTIONS.READ] },
 
-    { module: MODULE_KEYS.CONTENT_ENTRIES, actions: [ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.PUBLISH] },
-    { module: MODULE_KEYS.CONTENT_SEO, actions: [ACTIONS.READ, ACTIONS.UPDATE] },
+    {
+      module: MODULE_KEYS.CONTENT_ENTRIES,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE, ACTIONS.PUBLISH],
+    },
+    {
+      module: MODULE_KEYS.CONTENT_SEO,
+      actions: [ACTIONS.READ, ACTIONS.UPDATE],
+    },
 
     { module: MODULE_KEYS.ASSETS, actions: [ACTIONS.READ] },
   ],
@@ -158,7 +217,14 @@ const ROLE_PERMISSION_MATRIX = {
 
 async function upsertPermissions(workspaceId) {
   if (!workspaceId) {
-    throw new Error("workspaceId is required in upsertPermissions");
+    throw ApiError.badRequest(
+      "workspaceId is required in upsertPermissions",
+      {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RBAC_SEED_WORKSPACE_ID_REQUIRED",
+        resource: "PERMISSIONS",
+      }
+    );
   }
 
   const map = {};
@@ -194,7 +260,11 @@ async function upsertPermissions(workspaceId) {
 
 async function upsertRoles(workspaceId) {
   if (!workspaceId) {
-    throw new Error("workspaceId is required in upsertRoles");
+    throw ApiError.badRequest("workspaceId is required in upsertRoles", {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      reason: "RBAC_SEED_WORKSPACE_ID_REQUIRED",
+      resource: "ROLES",
+    });
   }
 
   const map = {};
@@ -225,7 +295,14 @@ async function upsertRoles(workspaceId) {
 
 async function upsertRolePermissions(workspaceId, rolesByKey, permissionsByKey) {
   if (!workspaceId) {
-    throw new Error("workspaceId is required in upsertRolePermissions");
+    throw ApiError.badRequest(
+      "workspaceId is required in upsertRolePermissions",
+      {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RBAC_SEED_WORKSPACE_ID_REQUIRED",
+        resource: "ROLES",
+      }
+    );
   }
 
   for (const [roleName, rule] of Object.entries(ROLE_PERMISSION_MATRIX)) {
@@ -290,7 +367,14 @@ async function upsertRolePermissions(workspaceId, rolesByKey, permissionsByKey) 
  */
 export async function ensureDefaultRolesAndPermissions(workspaceId) {
   if (!workspaceId) {
-    throw new Error("workspaceId is required in ensureDefaultRolesAndPermissions");
+    throw ApiError.badRequest(
+      "workspaceId is required in ensureDefaultRolesAndPermissions",
+      {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RBAC_SEED_WORKSPACE_ID_REQUIRED",
+        resource: "RBAC",
+      }
+    );
   }
 
   const [permissionsByKey, rolesByKey] = await Promise.all([
@@ -315,7 +399,15 @@ export async function ensureDefaultRolesAndPermissions(workspaceId) {
  */
 export async function ensureWorkspaceDefaultRoleBinding(workspaceId, userId) {
   if (!workspaceId || !userId) {
-    throw new Error("workspaceId and userId are required in ensureWorkspaceDefaultRoleBinding");
+    throw ApiError.badRequest(
+      "workspaceId and userId are required in ensureWorkspaceDefaultRoleBinding",
+      {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "RBAC_SEED_WORKSPACE_ID_USER_ID_REQUIRED",
+        resource: "RBAC",
+        details: { workspaceId, userId },
+      }
+    );
   }
 
   // 1) Pastikan RBAC (roles & permissions) sudah ada

@@ -1,5 +1,10 @@
+// =========================================================
 // src/services/planLimit.service.js
+// =========================================================
+
 import prisma from "../config/prismaClient.js";
+import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 /**
  * Action yang dikenali oleh enforcePlanLimit.
@@ -18,9 +23,10 @@ export const PLAN_LIMIT_ACTIONS = {
  */
 async function getWorkspacePlanLimits(workspaceId) {
   if (!workspaceId) {
-    const e = new Error("workspaceId is required");
-    e.status = 400;
-    throw e;
+    throw ApiError.badRequest("workspaceId is required", {
+      code: ERROR_CODES.WORKSPACE_REQUIRED,
+      reason: "PLAN_LIMIT_WORKSPACE_ID_MISSING",
+    });
   }
 
   const ws = await prisma.workspace.findUnique({
@@ -40,9 +46,10 @@ async function getWorkspacePlanLimits(workspaceId) {
   });
 
   if (!ws) {
-    const e = new Error("Workspace not found");
-    e.status = 404;
-    throw e;
+    throw ApiError.notFound("Workspace not found", {
+      code: ERROR_CODES.WORKSPACE_NOT_FOUND,
+      reason: "PLAN_LIMIT_WORKSPACE_NOT_FOUND",
+    });
   }
 
   // Kalau belum ada plan terpasang, treat as unlimited (free dev mode)
@@ -77,10 +84,9 @@ async function getWorkspacePlanLimits(workspaceId) {
 export async function enforcePlanLimit(workspaceId, action, options = {}) {
   const limits = await getWorkspacePlanLimits(workspaceId);
 
-  // Jika plan tidak punya limit (null) → unlimited → lepas
   switch (action) {
     case PLAN_LIMIT_ACTIONS.ADD_MEMBER: {
-      const { maxMembers } = limits;
+      const { maxMembers, planId, planName } = limits;
       if (maxMembers == null) return;
 
       const current = await prisma.workspaceMember.count({
@@ -88,23 +94,25 @@ export async function enforcePlanLimit(workspaceId, action, options = {}) {
       });
 
       if (current >= maxMembers) {
-        const err = new Error("Member limit reached for current plan");
-        err.status = 403;
-        err.code = "PLAN_LIMIT_MEMBERS";
-        err.meta = {
-          workspaceId,
-          current,
-          max: maxMembers,
-          planId: limits.planId,
-          planName: limits.planName,
-        };
-        throw err;
+        throw ApiError.forbidden("Member limit reached for current plan", {
+          code: ERROR_CODES.PLAN_LIMIT_MEMBERS,
+          reason: ERROR_CODES.PLAN_LIMIT_EXCEEDED,
+          action,
+          resource: "MEMBERS",
+          details: {
+            workspaceId,
+            current,
+            max: maxMembers,
+            planId,
+            planName,
+          },
+        });
       }
       return;
     }
 
     case PLAN_LIMIT_ACTIONS.ADD_CONTENT_TYPE: {
-      const { maxContentTypes } = limits;
+      const { maxContentTypes, planId, planName } = limits;
       if (maxContentTypes == null) return;
 
       const current = await prisma.contentType.count({
@@ -112,23 +120,28 @@ export async function enforcePlanLimit(workspaceId, action, options = {}) {
       });
 
       if (current >= maxContentTypes) {
-        const err = new Error("Content type limit reached for current plan");
-        err.status = 403;
-        err.code = "PLAN_LIMIT_CONTENT_TYPES";
-        err.meta = {
-          workspaceId,
-          current,
-          max: maxContentTypes,
-          planId: limits.planId,
-          planName: limits.planName,
-        };
-        throw err;
+        throw ApiError.forbidden(
+          "Content type limit reached for current plan",
+          {
+            code: ERROR_CODES.PLAN_LIMIT_CONTENT_TYPES,
+            reason: ERROR_CODES.PLAN_LIMIT_EXCEEDED,
+            action,
+            resource: "CONTENT_TYPES",
+            details: {
+              workspaceId,
+              current,
+              max: maxContentTypes,
+              planId,
+              planName,
+            },
+          }
+        );
       }
       return;
     }
 
     case PLAN_LIMIT_ACTIONS.ADD_ENTRY: {
-      const { maxEntries } = limits;
+      const { maxEntries, planId, planName } = limits;
       if (maxEntries == null) return;
 
       // Total entries di workspace (semua ContentType).
@@ -137,17 +150,19 @@ export async function enforcePlanLimit(workspaceId, action, options = {}) {
       });
 
       if (current >= maxEntries) {
-        const err = new Error("Entry limit reached for current plan");
-        err.status = 403;
-        err.code = "PLAN_LIMIT_ENTRIES";
-        err.meta = {
-          workspaceId,
-          current,
-          max: maxEntries,
-          planId: limits.planId,
-          planName: limits.planName,
-        };
-        throw err;
+        throw ApiError.forbidden("Entry limit reached for current plan", {
+          code: ERROR_CODES.PLAN_LIMIT_ENTRIES,
+          reason: ERROR_CODES.PLAN_LIMIT_EXCEEDED,
+          action,
+          resource: "CONTENT_ENTRIES",
+          details: {
+            workspaceId,
+            current,
+            max: maxEntries,
+            planId,
+            planName,
+          },
+        });
       }
       return;
     }

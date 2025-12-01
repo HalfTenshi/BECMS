@@ -1,4 +1,6 @@
+// =========================================================
 // src/middlewares/errorHandler.js
+// =========================================================
 
 /**
  * Global error handler
@@ -69,6 +71,9 @@ export function errorHandler(err, req, res, next) {
       ? "Internal Server Error"
       : "Error";
 
+  // Kadang ada lib yang pakai `errors` alih-alih `details`
+  const details = err.details ?? err.errors;
+
   const body = {
     success: false,
     error: {
@@ -76,22 +81,21 @@ export function errorHandler(err, req, res, next) {
       title: err.title || defaultTitle,
       status,
       code: err.code || undefined,
-      // 🔥 field baru penting untuk RBAC & SEO
+      // field penting untuk RBAC & observability
       reason: err.reason || undefined,
       action: err.action || undefined,
       resource: err.resource || undefined,
       detail: err.message || "Unexpected error",
       instance: req.originalUrl,
-      errors: err.details || undefined,
+      errors: details || undefined,
     },
   };
 
-  // (Opsional) log ke console untuk debugging dev
   if (status >= 500) {
-    // Error server → log stack
+    // Error server → log stack (jangan bocor ke client)
     console.error("Unhandled error:", err);
   } else {
-    // Error 4xx → cukup ringkas
+    // Error 4xx → log ringkas
     console.warn("API error:", {
       status,
       code: err.code,

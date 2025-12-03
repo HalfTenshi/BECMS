@@ -161,7 +161,12 @@ async function assertValidSlugFrom(contentTypeId, slugFrom) {
 async function assertValidRelation(contentTypeId, relation) {
   if (!relation) return;
 
-  const ALLOWED_KINDS = ["MANY_TO_ONE", "ONE_TO_MANY", "MANY_TO_MANY", "ONE_TO_ONE"];
+  const ALLOWED_KINDS = [
+    "MANY_TO_ONE",
+    "ONE_TO_MANY",
+    "MANY_TO_MANY",
+    "ONE_TO_ONE",
+  ];
 
   if (!relation.kind || !ALLOWED_KINDS.includes(relation.kind)) {
     throw ApiError.unprocessable("Invalid relation kind", {
@@ -214,7 +219,7 @@ class ContentFieldService {
     const f = await repo.findById(fieldId);
     if (!f || f.contentTypeId !== contentTypeId) {
       throw ApiError.notFound("Field not found in this ContentType", {
-        code: ERROR_CODES.VALIDATION_ERROR,
+        code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
         reason: "CONTENT_FIELD_NOT_FOUND",
         resource: "CONTENT_FIELDS",
         details: { fieldId, contentTypeId },
@@ -283,7 +288,7 @@ class ContentFieldService {
     const current = await repo.findById(fieldId);
     if (!current || current.contentTypeId !== contentTypeId) {
       throw ApiError.notFound("Field not found in this ContentType", {
-        code: ERROR_CODES.VALIDATION_ERROR,
+        code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
         reason: "CONTENT_FIELD_NOT_FOUND",
         resource: "CONTENT_FIELDS",
         details: { fieldId, contentTypeId },
@@ -345,7 +350,7 @@ class ContentFieldService {
     const current = await repo.findById(fieldId);
     if (!current || current.contentTypeId !== contentTypeId) {
       throw ApiError.notFound("Field not found in this ContentType", {
-        code: ERROR_CODES.VALIDATION_ERROR,
+        code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
         reason: "CONTENT_FIELD_NOT_FOUND",
         resource: "CONTENT_FIELDS",
         details: { fieldId, contentTypeId },

@@ -15,7 +15,7 @@ const DEFAULT_MAX_RETRIES = Number(process.env.XENDIT_MAX_RETRIES || "3");
 function createXenditClient() {
   if (!XENDIT_SECRET_KEY) {
     throw ApiError.internal("XENDIT_SECRET_KEY is not set in environment", {
-      code: ERROR_CODES.VALIDATION_ERROR,
+      code: ERROR_CODES.BILLING_CONFIG_ERROR,
       reason: "BILLING_CONFIG_INVALID",
     });
   }
@@ -67,9 +67,9 @@ async function withRetry(fn, { maxRetries = DEFAULT_MAX_RETRIES } = {}) {
     }
   }
 
-  // Bungkus lastError sebagai ApiError 502 (Bad Gateway)
+  // Bungkus lastError sebagai ApiError 500 (gateway/network)
   throw ApiError.internal("Failed to call Xendit API after retries", {
-    code: ERROR_CODES.VALIDATION_ERROR,
+    code: ERROR_CODES.BILLING_NETWORK_ERROR,
     reason: "BILLING_API_ERROR",
     details: { message: lastError?.message },
   });
@@ -77,11 +77,6 @@ async function withRetry(fn, { maxRetries = DEFAULT_MAX_RETRIES } = {}) {
 
 /**
  * Verifikasi signature webhook Xendit.
- * Dipakai kalau kamu mau pakai ini di route lain.
- *
- * - rawBody: Buffer dari express.raw()
- * - headers: req.headers
- * - secret: biasanya pakai ENV XENDIT_WEBHOOK_SECRET
  *
  * NOTE: Kalau signature invalid, fungsi ini hanya return false.
  * Kalau kamu ingin lempar error dari route, gunakan ApiError di route handler.
@@ -108,16 +103,6 @@ export function validateWebhookSignature(rawBody, headers, secret) {
 class XenditBillingService {
   /**
    * Buat invoice Xendit untuk subscription.
-   *
-   * Params:
-   * - workspaceId: id workspace BECMS
-   * - planId     : id plan BECMS
-   * - amount     : jumlah tagihan (number)
-   * - currency   : default "IDR"
-   * - description: default "Subscription BECMS"
-   * - externalId : optional, kalau kosong kita generate otomatis
-   * - successRedirectUrl / failureRedirectUrl: optional redirect URL
-   * - customer   : optional { email, given_names, surname, ... }
    */
   async createInvoice({
     workspaceId,
@@ -171,8 +156,8 @@ class XenditBillingService {
     const res = await withRetry(() => client.post("/v2/invoices", payload));
 
     if (res.status < 200 || res.status >= 300) {
-      throw new ApiError(res.status, `Failed to create Xendit invoice`, {
-        code: ERROR_CODES.VALIDATION_ERROR,
+      throw new ApiError(res.status, "Failed to create Xendit invoice", {
+        code: ERROR_CODES.BILLING_GATEWAY_ERROR,
         reason: "BILLING_API_ERROR",
         details: res.data,
       });
@@ -182,9 +167,7 @@ class XenditBillingService {
   }
 
   /**
-   * Ambil detail invoice dari Xendit.
-   *
-   * - invoiceId: id invoice Xendit (bukan external_id)
+   * Ambil detail invoice dari Xendit (by invoiceId).
    */
   async getInvoiceById(invoiceId) {
     if (!invoiceId) {
@@ -200,9 +183,17 @@ class XenditBillingService {
       client.get(`/v2/invoices/${encodeURIComponent(invoiceId)}`)
     );
 
+    if (res.status === 404) {
+      throw ApiError.notFound("Xendit invoice not found", {
+        code: ERROR_CODES.BILLING_INVOICE_NOT_FOUND,
+        reason: "BILLING_INVOICE_NOT_FOUND",
+        details: { invoiceId },
+      });
+    }
+
     if (res.status < 200 || res.status >= 300) {
-      throw new ApiError(res.status, `Failed to get Xendit invoice`, {
-        code: ERROR_CODES.VALIDATION_ERROR,
+      throw new ApiError(res.status, "Failed to get Xendit invoice", {
+        code: ERROR_CODES.BILLING_GATEWAY_ERROR,
         reason: "BILLING_API_ERROR",
         details: res.data,
       });
@@ -212,7 +203,7 @@ class XenditBillingService {
   }
 
   /**
-   * Ambil invoice berdasarkan external_id (kalau kamu simpan external_id di DB).
+   * Ambil invoice berdasarkan external_id.
    */
   async getInvoiceByExternalId(externalId) {
     if (!externalId) {
@@ -235,9 +226,9 @@ class XenditBillingService {
     if (res.status < 200 || res.status >= 300) {
       throw new ApiError(
         res.status,
-        `Failed to get Xendit invoice by external_id`,
+        "Failed to get Xendit invoice by external_id",
         {
-          code: ERROR_CODES.VALIDATION_ERROR,
+          code: ERROR_CODES.BILLING_GATEWAY_ERROR,
           reason: "BILLING_API_ERROR",
           details: res.data,
         }
@@ -251,7 +242,6 @@ class XenditBillingService {
 
   /**
    * Expire invoice yang masih PENDING.
-   * Xendit endpoint: POST /v2/invoices/{id}/expire
    */
   async expireInvoice(invoiceId) {
     if (!invoiceId) {
@@ -268,15 +258,11 @@ class XenditBillingService {
     );
 
     if (res.status < 200 || res.status >= 300) {
-      throw new ApiError(
-        res.status,
-        `Failed to expire Xendit invoice`,
-        {
-          code: ERROR_CODES.VALIDATION_ERROR,
-          reason: "BILLING_API_ERROR",
-          details: res.data,
-        }
-      );
+      throw new ApiError(res.status, "Failed to expire Xendit invoice", {
+        code: ERROR_CODES.BILLING_GATEWAY_ERROR,
+        reason: "BILLING_API_ERROR",
+        details: res.data,
+      });
     }
 
     return res.data;

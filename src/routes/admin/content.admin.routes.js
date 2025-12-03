@@ -9,7 +9,7 @@ import { ACTIONS, RESOURCES } from "../../constants/permissions.js";
 
 const r = express.Router();
 
-// Middleware global untuk semua route admin content
+// 🔒 Middleware global untuk semua route admin content
 r.use(auth, workspaceContext);
 
 // =======================

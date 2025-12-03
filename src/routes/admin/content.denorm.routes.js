@@ -1,8 +1,9 @@
+// src/routes/admin/content.denorm.routes.js
 import express from "express";
 import { auth } from "../../middlewares/auth.js";
 import workspaceContext from "../../middlewares/workspaceContext.js";
 import { authorize } from "../../middlewares/authorize.js";
-import { ACTIONS, RESOURCES } from "../../modules/rbac/rbac.constants.js";
+import { ACTIONS, RESOURCES } from "../../constants/permissions.js";
 import {
   recomputeDenormForRelationField,
   recomputeDenormForTargetChange,
@@ -10,6 +11,7 @@ import {
 
 const router = express.Router();
 
+// 🔒 Semua denorm admin butuh UPDATE CONTENT_ENTRIES
 router.use(
   auth,
   workspaceContext,

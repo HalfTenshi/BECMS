@@ -1,6 +1,7 @@
+// src/routes/workspace.routes.js
 import express from "express";
-import { auth } from "../middlewares/auth.js";
 
+import { auth } from "../middlewares/auth.js";
 import { authorize } from "../middlewares/authorize.js";
 import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 
@@ -19,8 +20,9 @@ const attachWsFromParam = (paramName) => (req, _res, next) => {
 /* =========================
    WORKSPACES (global scope)
    ========================= */
-// 🔒 Hanya auth (tidak butuh workspaceId)
+// 🔒 Hanya auth (tidak butuh workspaceId). Bisa ditambah RBAC kalau mau.
 router.get("/", auth, workspaceController.getAll);
+
 router.post(
   "/",
   auth,

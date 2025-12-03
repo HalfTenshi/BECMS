@@ -1,14 +1,15 @@
+// src/routes/admin/content.m2m.admin.routes.js
 import express from "express";
 import { auth } from "../../middlewares/auth.js";
-import { workspaceGuard as workspaceContext } from "../../middlewares/workspaceContext.js";
+import workspaceContext from "../../middlewares/workspaceContext.js";
 import { authorize } from "../../middlewares/authorize.js";
-import { ACTIONS, RESOURCES } from "../../modules/rbac/rbac.constants.js";
+import { ACTIONS, RESOURCES } from "../../constants/permissions.js";
 import prisma from "../../config/prismaClient.js";
 import { recomputeDenormForRelationField } from "../../services/denorm.service.js";
 
 const router = express.Router();
 
-// Proteksi dasar (auth + workspace)
+// 🔒 Proteksi dasar (auth + workspace) untuk semua endpoint M2M admin
 router.use(auth, workspaceContext);
 
 /**

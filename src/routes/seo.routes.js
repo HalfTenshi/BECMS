@@ -1,10 +1,13 @@
 // src/routes/seo.routes.js
-
 import express from "express";
 import { body, query } from "express-validator";
+
 import { validate } from "../middlewares/validate.js";
 import { auth } from "../middlewares/auth.js";
 import workspaceContext from "../middlewares/workspaceContext.js";
+import { authorize } from "../middlewares/authorize.js";
+import { ACTIONS, RESOURCES } from "../constants/permissions.js";
+
 import seoSupportController from "../modules/seo/seoSupport.controller.js";
 import contentEntryRepository from "../modules/content/contentEntry.repository.js";
 import {
@@ -12,6 +15,7 @@ import {
   MAX_META_DESCRIPTION_LENGTH,
 } from "../utils/seoUtils.js";
 import { ApiError } from "../utils/ApiError.js";
+import { ERROR_CODES } from "../constants/errorCodes.js";
 
 const router = express.Router();
 
@@ -35,6 +39,9 @@ const router = express.Router();
  *      score: { overall, breakdown: { ... } }
  *    }
  *  }
+ *
+ * Catatan:
+ *  - Endpoint ini boleh tetap PUBLIC (tanpa auth) sebagai SEO helper umum.
  */
 const analyzeRules = [
   body("title")
@@ -78,6 +85,7 @@ router.post(
  *
  * Proteksi:
  *  - auth + workspaceContext (multi-tenant safe)
+ *  - authorize(ACTIONS.READ, RESOURCES.CONTENT_SEO)
  */
 const previewRules = [
   query("entryId")
@@ -90,6 +98,7 @@ router.get(
   "/preview",
   auth,
   workspaceContext,
+  authorize(ACTIONS.READ, RESOURCES.CONTENT_SEO),
   previewRules,
   validate,
   async (req, res, next) => {
@@ -100,7 +109,8 @@ router.get(
 
       if (!workspaceId) {
         throw new ApiError(400, "workspaceId is required", {
-          code: "WORKSPACE_REQUIRED",
+          code: ERROR_CODES.WORKSPACE_REQUIRED,
+          resource: "CONTENT_SEO",
         });
       }
 
@@ -111,7 +121,9 @@ router.get(
 
       if (!entry) {
         throw new ApiError(404, "Entry not found", {
-          code: "CONTENT_ENTRY_NOT_FOUND",
+          code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+          resource: "CONTENT_ENTRIES",
+          details: { entryId, workspaceId },
         });
       }
 

@@ -1,10 +1,11 @@
 // src/routes/contentRelationM2m.routes.js
 import express from "express";
+
 import service from "../modules/content/contentRelationM2m.service.js";
 import { auth } from "../middlewares/auth.js";
-import { workspaceContext } from "../middlewares/workspace.js";
+import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
-import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
+import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ const router = express.Router();
  *  - Route admin di sini fokus ke mutasi data (attach, detach, reorder).
  */
 
-// Proteksi dasar: semua endpoint di sini butuh auth + workspace
+// 🔒 Proteksi dasar: semua endpoint di sini butuh auth + workspace
 router.use(auth, workspaceContext);
 
 /**

@@ -1,15 +1,16 @@
 // src/routes/contentField.routes.js
 import express from "express";
+
 import contentFieldController from "../modules/content/contentField.controller.js";
 import { auth } from "../middlewares/auth.js";
-import { workspaceContext } from "../middlewares/workspace.js";
+import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
-import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
+import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 
 const router = express.Router({ mergeParams: true });
 // base path akan dimount di: /api/content/types/:contentTypeId/fields
 
-// Semua route di sini butuh auth + workspace (dari header / query)
+// 🔒 Semua route di sini butuh auth + workspace (dari header / query)
 router.use(auth, workspaceContext);
 
 // List fields of a ContentType

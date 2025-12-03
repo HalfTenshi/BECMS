@@ -2,8 +2,10 @@
 // src/middlewares/errorHandler.js
 // =========================================================
 
+import { ApiError } from "../utils/ApiError.js";
+
 /**
- * Global error handler
+ * Global error handler (satu pintu semua error HTTP)
  *
  * Format respons:
  * {
@@ -18,13 +20,13 @@
  *     resource?: string,
  *     detail: string,
  *     instance: string,      // req.originalUrl
- *     errors?: any           // detail tambahan (mis: dari express-validator)
+ *     errors?: any           // detail tambahan (mis: dari express-validator atau validator lain)
  *   }
  * }
  *
  * Contoh untuk SEO:
  * 422 + new ApiError(422, "seoTitle must be at most 60 characters", {
- *   code: "SEO_TITLE_TOO_LONG",
+ *   code: ERROR_CODES.SEO_TITLE_TOO_LONG,
  *   reason: "SEO_VALIDATION_FAILED",
  * })
  *
@@ -48,10 +50,22 @@ export function errorHandler(err, req, res, next) {
     return next(err);
   }
 
-  const status =
-    typeof err.status === "number" && err.status >= 400 && err.status <= 599
-      ? err.status
-      : 500;
+  // Tentukan status:
+  // - Kalau ApiError → pakai err.status (fallback 500)
+  // - Kalau lib lain set .status → hormati selama 4xx/5xx
+  // - Selain itu → 500
+  let status = 500;
+
+  if (err instanceof ApiError && typeof err.status === "number") {
+    status =
+      err.status >= 400 && err.status <= 599 ? err.status : 500;
+  } else if (
+    typeof err.status === "number" &&
+    err.status >= 400 &&
+    err.status <= 599
+  ) {
+    status = err.status;
+  }
 
   // Title default berdasarkan status (IETF-ish)
   const defaultTitle =
@@ -93,7 +107,12 @@ export function errorHandler(err, req, res, next) {
 
   if (status >= 500) {
     // Error server → log stack (jangan bocor ke client)
-    console.error("Unhandled error:", err);
+    console.error("Unhandled error:", {
+      message: err.message,
+      code: err.code,
+      reason: err.reason,
+      stack: err.stack,
+    });
   } else {
     // Error 4xx → log ringkas
     console.warn("API error:", {

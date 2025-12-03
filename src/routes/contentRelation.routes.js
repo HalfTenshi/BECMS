@@ -1,9 +1,11 @@
 // src/routes/contentRelation.routes.js
 import express from "express";
+
 import service from "../modules/content/contentRelation/contentRelation.service.js";
-import { workspaceContext } from "../middlewares/workspace.js";
+import { auth } from "../middlewares/auth.js";
+import workspaceContext from "../middlewares/workspaceContext.js";
 import { authorize } from "../middlewares/authorize.js";
-import { ACTIONS, RESOURCES } from "../modules/rbac/rbac.constants.js";
+import { ACTIONS, RESOURCES } from "../constants/permissions.js";
 
 const router = express.Router();
 
@@ -21,6 +23,9 @@ const router = express.Router();
  *    → Admin mutasi di sini, Public endpoint cukup konsumsi hasilnya.
  */
 
+// 🔒 Semua endpoint di sini butuh auth + workspace
+router.use(auth, workspaceContext);
+
 /**
  * POST /content/relations/attach
  * Tambah satu relasi NON-M2M (ONE_TO_ONE / ONE_TO_MANY / MANY_TO_ONE)
@@ -32,7 +37,6 @@ const router = express.Router();
  */
 router.post(
   "/content/relations/attach",
-  workspaceContext,
   authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
@@ -69,7 +73,6 @@ router.post(
  */
 router.delete(
   "/content/relations/detach",
-  workspaceContext,
   authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
@@ -102,7 +105,6 @@ router.delete(
  */
 router.get(
   "/content/relations/list",
-  workspaceContext,
   authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
@@ -144,7 +146,6 @@ router.get(
  */
 router.get(
   "/content/relations/from-by-related",
-  workspaceContext,
   authorize(ACTIONS.READ, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {
@@ -191,7 +192,6 @@ router.get(
  */
 router.patch(
   "/content/relations/:fieldId/:fromEntryId/reorder",
-  workspaceContext,
   authorize(ACTIONS.UPDATE, RESOURCES.CONTENT_RELATIONS),
   async (req, res, next) => {
     try {

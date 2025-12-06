@@ -1,51 +1,113 @@
+// =========================================================
+// src/modules/product/product.controller.js
+// =========================================================
+
 import productService from "./product.service.js";
+import { ok, created, noContent } from "../../utils/response.js";
+
+function resolveWorkspaceId(req) {
+  return (
+    req.workspaceId ||
+    req.workspace?.id ||
+    req.headers["x-workspace-id"] ||
+    null
+  );
+}
 
 class ProductController {
-  async getAll(req, res) {
+  /**
+   * List semua product dalam satu workspace.
+   */
+  async getAll(req, res, next) {
     try {
-      const products = await productService.getAll();
-      res.json(products);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      const workspaceId = resolveWorkspaceId(req);
+
+      const products = await productService.list({
+        workspaceId,
+        query: req.query || {},
+      });
+
+      return ok(res, products);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async getById(req, res) {
+  /**
+   * Ambil satu product by id (scoped ke workspace).
+   */
+  async getById(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      const product = await productService.getById(id);
-      res.json(product);
-    } catch (error) {
-      res.status(404).json({ message: error.message });
+
+      const product = await productService.get({
+        workspaceId,
+        id,
+      });
+
+      return ok(res, product);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async create(req, res) {
+  /**
+   * Create product baru di workspace.
+   */
+  async create(req, res, next) {
     try {
-      const product = await productService.create(req.body);
-      res.status(201).json(product);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const workspaceId = resolveWorkspaceId(req);
+      const payload = req.body;
+
+      const product = await productService.create({
+        workspaceId,
+        payload,
+      });
+
+      return created(res, product);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async update(req, res) {
+  /**
+   * Update product.
+   */
+  async update(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      const product = await productService.update(id, req.body);
-      res.json(product);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const payload = req.body;
+
+      const product = await productService.update({
+        workspaceId,
+        id,
+        payload,
+      });
+
+      return ok(res, product);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async delete(req, res) {
+  /**
+   * Delete product.
+   */
+  async delete(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      await productService.delete(id);
-      res.json({ message: "Product deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+
+      await productService.remove({
+        workspaceId,
+        id,
+      });
+
+      return noContent(res);
+    } catch (e) {
+      return next(e);
     }
   }
 }

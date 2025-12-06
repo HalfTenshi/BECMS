@@ -1,12 +1,16 @@
 // src/modules/content/contentRelation/contentRelation.service.js
 import prisma from "../../../config/prismaClient.js";
+import { ApiError } from "../../../utils/ApiError.js";
+import { ERROR_CODES } from "../../../constants/errorCodes.js";
 import contentRelationRepository from "./contentRelation.repository.js";
 
-function assert(cond, msg) {
+function assert(cond, msg, details = {}) {
   if (!cond) {
-    const e = new Error(msg);
-    e.status = 400;
-    throw e;
+    throw ApiError.badRequest(msg, {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      resource: "CONTENT_RELATIONS",
+      details,
+    });
   }
 }
 
@@ -125,12 +129,18 @@ class ContentRelationService {
     assert(
       data?.workspaceId && data?.fieldId && data?.fromEntryId && data?.toEntryId,
       "workspaceId, fieldId, fromEntryId, and toEntryId required",
+      {
+        workspaceId: data?.workspaceId,
+        fieldId: data?.fieldId,
+        fromEntryId: data?.fromEntryId,
+        toEntryId: data?.toEntryId,
+      },
     );
     return contentRelationRepository.create(data);
   }
 
   async delete(id) {
-    assert(id, "id required");
+    assert(id, "id required", { id });
     return contentRelationRepository.delete(id);
   }
 
@@ -142,6 +152,7 @@ class ContentRelationService {
     assert(
       workspaceId && fieldId && fromEntryId && toEntryId,
       "workspaceId, fieldId, fromEntryId, toEntryId required",
+      { workspaceId, fieldId, fromEntryId, toEntryId },
     );
 
     // 1) Validasi field RELATION + relation config
@@ -166,13 +177,28 @@ class ContentRelationService {
       },
     });
 
-    assert(field, "Relation field not found");
+    if (!field) {
+      throw ApiError.notFound("Relation field not found", {
+        code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
+        resource: "CONTENT_FIELDS",
+        details: { workspaceId, fieldId },
+      });
+    }
+
     assert(
       field.contentType?.workspaceId === workspaceId,
       "Relation field not found in workspace",
+      { workspaceId, fieldId },
     );
-    assert(field.type === "RELATION", "Field is not RELATION type");
-    assert(field.relation?.targetContentTypeId, "Missing relation targetContentTypeId");
+    assert(field.type === "RELATION", "Field is not RELATION type", {
+      fieldId,
+      type: field.type,
+    });
+    assert(
+      field.relation?.targetContentTypeId,
+      "Missing relation targetContentTypeId",
+      { fieldId },
+    );
 
     const kind = field.relation.kind;
 
@@ -181,7 +207,11 @@ class ContentRelationService {
       where: { id: fromEntryId },
       select: { id: true, workspaceId: true, contentTypeId: true },
     });
-    assert(from && from.workspaceId === workspaceId, "From entry not found in workspace");
+    assert(
+      from && from.workspaceId === workspaceId,
+      "From entry not found in workspace",
+      { workspaceId, fieldId, fromEntryId },
+    );
 
     // 3) Validasi to entry (harus CT target)
     const to = await prisma.contentEntry.findFirst({
@@ -192,7 +222,13 @@ class ContentRelationService {
       },
       select: { id: true },
     });
-    assert(!!to, "Target entry not found / content type mismatch");
+    assert(!!to, "Target entry not found / content type mismatch", {
+      workspaceId,
+      fieldId,
+      fromEntryId,
+      toEntryId,
+      targetContentTypeId: field.relation.targetContentTypeId,
+    });
 
     // 4) Enforcement kardinalitas
     const existingRow = await enforceCardinalityBeforeAttach({
@@ -222,14 +258,28 @@ class ContentRelationService {
    * orderedToEntryIds: array toEntryId berurutan 0..n
    */
   async reorder({ fieldId, fromEntryId, orderedToEntryIds = [] }) {
-    assert(fieldId && fromEntryId, "fieldId & fromEntryId required");
-    assert(Array.isArray(orderedToEntryIds), "orderedToEntryIds must be array");
-    return contentRelationRepository.setOrder({ fieldId, fromEntryId, orderedToEntryIds });
+    assert(fieldId && fromEntryId, "fieldId & fromEntryId required", {
+      fieldId,
+      fromEntryId,
+    });
+    assert(
+      Array.isArray(orderedToEntryIds),
+      "orderedToEntryIds must be array",
+      { orderedToEntryIdsType: typeof orderedToEntryIds },
+    );
+    return contentRelationRepository.setOrder({
+      fieldId,
+      fromEntryId,
+      orderedToEntryIds,
+    });
   }
 
   // List relasi milik fromEntryId + fieldId (sudah terurut by position)
   async list({ fieldId, fromEntryId }) {
-    assert(fieldId && fromEntryId, "fieldId & fromEntryId required");
+    assert(fieldId && fromEntryId, "fieldId & fromEntryId required", {
+      fieldId,
+      fromEntryId,
+    });
     return contentRelationRepository.findByFromField({ fieldId, fromEntryId });
   }
 
@@ -253,6 +303,7 @@ class ContentRelationService {
     assert(
       workspaceId && fieldId && relatedEntryId,
       "workspaceId, fieldId, relatedEntryId required",
+      { workspaceId, fieldId, relatedEntryId },
     );
 
     // Validasi field RELATION & pastikan BUKAN MANY_TO_MANY
@@ -269,14 +320,29 @@ class ContentRelationService {
       },
     });
 
-    assert(field, "Relation field not found");
+    if (!field) {
+      throw ApiError.notFound("Relation field not found", {
+        code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
+        resource: "CONTENT_FIELDS",
+        details: { workspaceId, fieldId },
+      });
+    }
+
     assert(
       field.contentType?.workspaceId === workspaceId,
       "Relation field not found in workspace",
+      { workspaceId, fieldId },
     );
-    assert(field.type === "RELATION", "Field is not RELATION type");
-    assert(field.relation, "Missing relation config");
-    assert(field.relation.kind !== "MANY_TO_MANY", "Use M2M service for MANY_TO_MANY");
+    assert(field.type === "RELATION", "Field is not RELATION type", {
+      fieldId,
+      type: field.type,
+    });
+    assert(field.relation, "Missing relation config", { fieldId });
+    assert(
+      field.relation.kind !== "MANY_TO_MANY",
+      "Use M2M service for MANY_TO_MANY",
+      { fieldId, kind: field.relation.kind },
+    );
 
     return contentRelationRepository.findFromByRelated({
       fieldId,

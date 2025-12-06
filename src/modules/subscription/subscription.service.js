@@ -1,6 +1,11 @@
+// =========================================================
 // src/modules/subscription/subscription.service.js
+// =========================================================
+
 import prisma from "../../config/prismaClient.js";
 import subscriptionRepository from "./subscription.repository.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 class SubscriptionService {
   /**
@@ -12,9 +17,10 @@ class SubscriptionService {
    */
   async getWorkspacePlanStatus(workspaceId) {
     if (!workspaceId) {
-      const e = new Error("workspaceId is required");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        reason: "SUBSCRIPTION_WORKSPACE_ID_REQUIRED",
+      });
     }
 
     const workspace = await prisma.workspace.findUnique({
@@ -35,9 +41,12 @@ class SubscriptionService {
     });
 
     if (!workspace) {
-      const e = new Error("Workspace not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Workspace not found", {
+        code: ERROR_CODES.WORKSPACE_NOT_FOUND,
+        reason: "SUBSCRIPTION_WORKSPACE_NOT_FOUND",
+        resource: "WORKSPACES",
+        details: { workspaceId },
+      });
     }
 
     const [activeSub, memberCount, contentTypeCount, entryCount] =
@@ -96,9 +105,10 @@ class SubscriptionService {
    */
   async listWorkspaceSubscriptions(workspaceId) {
     if (!workspaceId) {
-      const e = new Error("workspaceId is required");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        reason: "SUBSCRIPTION_WORKSPACE_ID_REQUIRED",
+      });
     }
 
     const subs = await subscriptionRepository.listByWorkspace(workspaceId);
@@ -115,14 +125,17 @@ class SubscriptionService {
    */
   async startSubscription({ workspaceId, planId }) {
     if (!workspaceId) {
-      const e = new Error("workspaceId is required");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        reason: "SUBSCRIPTION_WORKSPACE_ID_REQUIRED",
+      });
     }
     if (!planId) {
-      const e = new Error("planId is required");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("planId is required", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        reason: "SUBSCRIPTION_PLAN_ID_REQUIRED",
+        details: { workspaceId },
+      });
     }
 
     // Pastikan workspace & plan ada
@@ -138,15 +151,21 @@ class SubscriptionService {
     ]);
 
     if (!workspace) {
-      const e = new Error("Workspace not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Workspace not found", {
+        code: ERROR_CODES.WORKSPACE_NOT_FOUND,
+        reason: "SUBSCRIPTION_WORKSPACE_NOT_FOUND",
+        resource: "WORKSPACES",
+        details: { workspaceId },
+      });
     }
 
     if (!plan) {
-      const e = new Error("Plan not found");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("Plan not found", {
+        code: ERROR_CODES.PLAN_NOT_FOUND,
+        reason: "SUBSCRIPTION_PLAN_NOT_FOUND",
+        resource: "PLANS",
+        details: { workspaceId, planId },
+      });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -181,18 +200,23 @@ class SubscriptionService {
    */
   async cancelActiveSubscription(workspaceId) {
     if (!workspaceId) {
-      const e = new Error("workspaceId is required");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("workspaceId is required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        reason: "SUBSCRIPTION_WORKSPACE_ID_REQUIRED",
+      });
     }
 
     const active = await subscriptionRepository.getActiveByWorkspace(
       workspaceId
     );
+
     if (!active) {
-      const e = new Error("No active subscription");
-      e.status = 404;
-      throw e;
+      throw ApiError.notFound("No active subscription", {
+        code: ERROR_CODES.SUBSCRIPTION_NOT_FOUND,
+        reason: "SUBSCRIPTION_ACTIVE_NOT_FOUND",
+        resource: "SUBSCRIPTIONS",
+        details: { workspaceId },
+      });
     }
 
     const updated = await subscriptionRepository.updateStatus(active.id, {
@@ -231,9 +255,10 @@ class SubscriptionService {
   async handleBillingWebhookEvent(payload) {
     // Safety: pastikan payload object
     if (!payload || typeof payload !== "object") {
-      const e = new Error("Invalid webhook payload");
-      e.status = 400;
-      throw e;
+      throw ApiError.badRequest("Invalid webhook payload", {
+        code: ERROR_CODES.BILLING_WEBHOOK_PAYLOAD_INVALID,
+        reason: "SUBSCRIPTION_WEBHOOK_PAYLOAD_INVALID",
+      });
     }
 
     // --- Extract dari beberapa kemungkinan shape ---
@@ -282,9 +307,14 @@ class SubscriptionService {
 
     if (event === "SUBSCRIPTION_ACTIVATED") {
       if (!workspaceId || !planId) {
-        const e = new Error("workspaceId and planId are required for activation");
-        e.status = 400;
-        throw e;
+        throw ApiError.badRequest(
+          "workspaceId and planId are required for activation",
+          {
+            code: ERROR_CODES.BILLING_WEBHOOK_PAYLOAD_INVALID,
+            reason: "SUBSCRIPTION_ACTIVATION_INVALID",
+            details: { workspaceId, planId, event },
+          }
+        );
       }
 
       const sub = await this.startSubscription({ workspaceId, planId });
@@ -300,9 +330,14 @@ class SubscriptionService {
 
     if (event === "SUBSCRIPTION_CANCELLED") {
       if (!workspaceId) {
-        const e = new Error("workspaceId is required for cancellation");
-        e.status = 400;
-        throw e;
+        throw ApiError.badRequest(
+          "workspaceId is required for cancellation",
+          {
+            code: ERROR_CODES.BILLING_WEBHOOK_PAYLOAD_INVALID,
+            reason: "SUBSCRIPTION_CANCELLATION_INVALID",
+            details: { workspaceId, event },
+          }
+        );
       }
 
       const sub = await this.cancelActiveSubscription(workspaceId);

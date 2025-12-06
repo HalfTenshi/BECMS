@@ -1,5 +1,7 @@
 // src/modules/content/contentRelation/contentRelation.repository.js
 import prisma from "../../../config/prismaClient.js";
+import { ApiError } from "../../../utils/ApiError.js";
+import { ERROR_CODES } from "../../../constants/errorCodes.js";
 
 class ContentRelationRepository {
   /**
@@ -94,7 +96,15 @@ class ContentRelationRepository {
    */
   async setOrder({ fieldId, fromEntryId, orderedToEntryIds = [] }) {
     if (!Array.isArray(orderedToEntryIds)) {
-      throw new Error("orderedToEntryIds must be an array");
+      throw ApiError.badRequest("orderedToEntryIds must be an array", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        resource: "CONTENT_RELATIONS",
+        details: {
+          fieldId,
+          fromEntryId,
+          receivedType: typeof orderedToEntryIds,
+        },
+      });
     }
 
     // Ambil existing rows agar tahu id & posisi sekarang (sudah terurut)

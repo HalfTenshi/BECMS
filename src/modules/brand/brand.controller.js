@@ -1,51 +1,113 @@
+// =========================================================
+// src/modules/brand/brand.controller.js
+// =========================================================
+
 import brandService from "./brand.service.js";
+import { ok, created, noContent } from "../../utils/response.js";
+
+function resolveWorkspaceId(req) {
+  return (
+    req.workspaceId ||
+    req.workspace?.id ||
+    req.headers["x-workspace-id"] ||
+    null
+  );
+}
 
 class BrandController {
-  async getAll(req, res) {
+  /**
+   * List semua brand dalam satu workspace.
+   */
+  async getAll(req, res, next) {
     try {
-      const brands = await brandService.getAll();
-      res.json(brands);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+      const workspaceId = resolveWorkspaceId(req);
+
+      const brands = await brandService.list({
+        workspaceId,
+        query: req.query || {},
+      });
+
+      return ok(res, brands);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async getById(req, res) {
+  /**
+   * Ambil satu brand by id (scoped ke workspace).
+   */
+  async getById(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      const brand = await brandService.getById(id);
-      res.json(brand);
-    } catch (error) {
-      res.status(404).json({ message: error.message });
+
+      const brand = await brandService.get({
+        workspaceId,
+        id,
+      });
+
+      return ok(res, brand);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async create(req, res) {
+  /**
+   * Create brand baru di workspace.
+   */
+  async create(req, res, next) {
     try {
-      const brand = await brandService.create(req.body);
-      res.status(201).json(brand);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const workspaceId = resolveWorkspaceId(req);
+      const payload = req.body;
+
+      const brand = await brandService.create({
+        workspaceId,
+        payload,
+      });
+
+      return created(res, brand);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async update(req, res) {
+  /**
+   * Update brand.
+   */
+  async update(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      const brand = await brandService.update(id, req.body);
-      res.json(brand);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
+      const payload = req.body;
+
+      const brand = await brandService.update({
+        workspaceId,
+        id,
+        payload,
+      });
+
+      return ok(res, brand);
+    } catch (e) {
+      return next(e);
     }
   }
 
-  async delete(req, res) {
+  /**
+   * Delete brand.
+   */
+  async delete(req, res, next) {
     try {
+      const workspaceId = resolveWorkspaceId(req);
       const { id } = req.params;
-      await brandService.delete(id);
-      res.json({ message: "Brand deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
+
+      await brandService.remove({
+        workspaceId,
+        id,
+      });
+
+      return noContent(res);
+    } catch (e) {
+      return next(e);
     }
   }
 }

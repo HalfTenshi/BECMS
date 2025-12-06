@@ -23,35 +23,35 @@ router.use(auth, workspaceContext);
 router.get(
   "/",
   authorize(ACTIONS.READ, RESOURCES.BRANDS),
-  (req, res, next) => brandController.getAll(req, res, next)
+  brandController.getAll
 );
 
 // Get single brand by id
 router.get(
   "/:id",
   authorize(ACTIONS.READ, RESOURCES.BRANDS),
-  (req, res, next) => brandController.getById(req, res, next)
+  brandController.getById
 );
 
 // Create brand
 router.post(
   "/",
   authorize(ACTIONS.CREATE, RESOURCES.BRANDS),
-  (req, res, next) => brandController.create(req, res, next)
+  brandController.create
 );
 
 // Update brand
 router.put(
   "/:id",
   authorize(ACTIONS.UPDATE, RESOURCES.BRANDS),
-  (req, res, next) => brandController.update(req, res, next)
+  brandController.update
 );
 
 // Delete brand
 router.delete(
   "/:id",
   authorize(ACTIONS.DELETE, RESOURCES.BRANDS),
-  (req, res, next) => brandController.delete(req, res, next)
+  brandController.delete
 );
 
 export default router;

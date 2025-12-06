@@ -1,8 +1,11 @@
+// =========================================================
 // src/modules/subscription/subscription.controller.js
+// =========================================================
+
 import subscriptionService from "./subscription.service.js";
 
 class SubscriptionController {
-  async getPlanStatus(req, res) {
+  async getPlanStatus(req, res, next) {
     try {
       const workspaceId =
         req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
@@ -13,13 +16,11 @@ class SubscriptionController {
 
       return res.json({ success: true, data });
     } catch (e) {
-      return res
-        .status(e.status || 400)
-        .json({ message: e.message || "Failed to get plan status" });
+      return next(e);
     }
   }
 
-  async listHistory(req, res) {
+  async listHistory(req, res, next) {
     try {
       const workspaceId =
         req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
@@ -30,13 +31,11 @@ class SubscriptionController {
 
       return res.json({ success: true, data });
     } catch (e) {
-      return res
-        .status(e.status || 400)
-        .json({ message: e.message || "Failed to list subscriptions" });
+      return next(e);
     }
   }
 
-  async start(req, res) {
+  async start(req, res, next) {
     try {
       const workspaceId =
         req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
@@ -49,13 +48,11 @@ class SubscriptionController {
 
       return res.status(201).json({ success: true, data });
     } catch (e) {
-      return res
-        .status(e.status || 400)
-        .json({ message: e.message || "Failed to start subscription" });
+      return next(e);
     }
   }
 
-  async cancelActive(req, res) {
+  async cancelActive(req, res, next) {
     try {
       const workspaceId =
         req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
@@ -66,22 +63,18 @@ class SubscriptionController {
 
       return res.json({ success: true, data });
     } catch (e) {
-      return res
-        .status(e.status || 400)
-        .json({ message: e.message || "Failed to cancel subscription" });
+      return next(e);
     }
   }
 
-  async billingWebhook(req, res) {
+  async billingWebhook(req, res, next) {
     try {
       const result = await subscriptionService.handleBillingWebhookEvent(
         req.body || {}
       );
       return res.json({ success: true, data: result });
     } catch (e) {
-      return res
-        .status(400)
-        .json({ message: e.message || "Failed to handle billing webhook" });
+      return next(e);
     }
   }
 }

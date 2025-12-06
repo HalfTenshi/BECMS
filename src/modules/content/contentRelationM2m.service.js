@@ -1,20 +1,34 @@
 // src/modules/content/contentRelationM2m.service.js
 import prisma from "../../config/prismaClient.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 import m2mRepo from "./contentRelationM2m.repository.js";
 
-function assert(cond, msg) {
+function assert(cond, msg, details = {}) {
   if (!cond) {
-    const e = new Error(msg);
-    e.status = 400;
-    throw e;
+    throw ApiError.badRequest(msg, {
+      code: ERROR_CODES.VALIDATION_ERROR,
+      resource: "CONTENT_RELATIONS",
+      details,
+    });
   }
 }
 
 // Helper khusus untuk error yang lebih informatif di getRelationFieldOrThrow
-function httpError(status, message) {
-  const e = new Error(message);
-  e.status = status;
-  throw e;
+function httpError(status, message, details = {}) {
+  if (status === 404) {
+    throw ApiError.notFound(message, {
+      code: ERROR_CODES.CONTENT_FIELD_NOT_FOUND,
+      resource: "CONTENT_FIELDS",
+      details,
+    });
+  }
+
+  throw ApiError.badRequest(message, {
+    code: ERROR_CODES.VALIDATION_ERROR,
+    resource: "CONTENT_RELATIONS",
+    details,
+  });
 }
 
 class ContentRelationM2mService {
@@ -36,37 +50,50 @@ class ContentRelationM2mService {
         contentTypeId: true,
         relation: {
           select: {
-            kind: true,              // ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY
+            kind: true, // ONE_TO_ONE | ONE_TO_MANY | MANY_TO_ONE | MANY_TO_MANY
             targetContentTypeId: true,
           },
         },
         contentType: {
           select: {
-            workspaceId: true,       // workspace dicek dari ContentType
+            workspaceId: true, // workspace dicek dari ContentType
           },
         },
       },
     });
 
     if (!field) {
-      httpError(404, `Relation field not found (fieldId=${fieldId})`);
+      httpError(404, `Relation field not found (fieldId=${fieldId})`, {
+        fieldId,
+        workspaceId,
+      });
     }
     if (field.contentType?.workspaceId !== workspaceId) {
       httpError(
         404,
         `Relation field not in workspace (fieldId=${fieldId}, workspaceId=${workspaceId})`,
+        { fieldId, workspaceId },
       );
     }
     if (field.type !== "RELATION") {
-      httpError(400, `Field is not RELATION type (fieldId=${fieldId})`);
+      httpError(400, `Field is not RELATION type (fieldId=${fieldId})`, {
+        fieldId,
+        type: field.type,
+      });
     }
     if (!field.relation) {
-      httpError(400, `Missing relation config for fieldId=${fieldId}`);
+      httpError(400, `Missing relation config for fieldId=${fieldId}`, {
+        fieldId,
+      });
     }
     if (field.relation.kind !== "MANY_TO_MANY") {
       httpError(
         400,
         `Relation kind must be MANY_TO_MANY, got ${field.relation.kind} (fieldId=${fieldId})`,
+        {
+          fieldId,
+          kind: field.relation.kind,
+        },
       );
     }
 
@@ -81,8 +108,11 @@ class ContentRelationM2mService {
     assert(
       workspaceId && fieldId && fromEntryId,
       "workspaceId, fieldId, fromEntryId required",
+      { workspaceId, fieldId, fromEntryId },
     );
-    assert(Array.isArray(toEntryIds), "toEntryIds must be array");
+    assert(Array.isArray(toEntryIds), "toEntryIds must be array", {
+      toEntryIdsType: typeof toEntryIds,
+    });
 
     const field = await this.getRelationFieldOrThrow({ workspaceId, fieldId });
     const rel = field.relation;
@@ -92,7 +122,11 @@ class ContentRelationM2mService {
       where: { id: fromEntryId },
       select: { id: true, workspaceId: true, contentTypeId: true },
     });
-    assert(from && from.workspaceId === workspaceId, "From entry not found in workspace");
+    assert(
+      from && from.workspaceId === workspaceId,
+      "From entry not found in workspace",
+      { workspaceId, fieldId, fromEntryId },
+    );
 
     if (!toEntryIds.length) {
       return [];
@@ -110,6 +144,13 @@ class ContentRelationM2mService {
     assert(
       targets.length === toEntryIds.length,
       "Some target entries not found / content type mismatch",
+      {
+        workspaceId,
+        fieldId,
+        fromEntryId,
+        expectedCount: toEntryIds.length,
+        actualCount: targets.length,
+      },
     );
 
     return m2mRepo.attachMany({
@@ -127,8 +168,11 @@ class ContentRelationM2mService {
     assert(
       workspaceId && fieldId && fromEntryId,
       "workspaceId, fieldId, fromEntryId required",
+      { workspaceId, fieldId, fromEntryId },
     );
-    assert(Array.isArray(toEntryIds), "toEntryIds must be array");
+    assert(Array.isArray(toEntryIds), "toEntryIds must be array", {
+      toEntryIdsType: typeof toEntryIds,
+    });
 
     await this.getRelationFieldOrThrow({ workspaceId, fieldId });
 
@@ -146,6 +190,7 @@ class ContentRelationM2mService {
     assert(
       workspaceId && fieldId && fromEntryId,
       "workspaceId, fieldId, fromEntryId required",
+      { workspaceId, fieldId, fromEntryId },
     );
 
     await this.getRelationFieldOrThrow({ workspaceId, fieldId });
@@ -172,6 +217,7 @@ class ContentRelationM2mService {
     assert(
       workspaceId && fieldId && relatedEntryId,
       "workspaceId, fieldId, relatedEntryId required",
+      { workspaceId, fieldId, relatedEntryId },
     );
 
     await this.getRelationFieldOrThrow({ workspaceId, fieldId });
@@ -191,8 +237,13 @@ class ContentRelationM2mService {
     assert(
       workspaceId && fieldId && fromEntryId,
       "workspaceId, fieldId, fromEntryId required",
+      { workspaceId, fieldId, fromEntryId },
     );
-    assert(Array.isArray(orderedToEntryIds), "orderedToEntryIds must be array");
+    assert(
+      Array.isArray(orderedToEntryIds),
+      "orderedToEntryIds must be array",
+      { orderedToEntryIdsType: typeof orderedToEntryIds },
+    );
 
     await this.getRelationFieldOrThrow({ workspaceId, fieldId });
 

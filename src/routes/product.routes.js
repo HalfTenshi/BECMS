@@ -23,35 +23,35 @@ router.use(auth, workspaceContext);
 router.get(
   "/",
   authorize(ACTIONS.READ, RESOURCES.PRODUCTS),
-  (req, res, next) => productController.getAll(req, res, next)
+  productController.getAll
 );
 
 // Get single product by id
 router.get(
   "/:id",
   authorize(ACTIONS.READ, RESOURCES.PRODUCTS),
-  (req, res, next) => productController.getById(req, res, next)
+  productController.getById
 );
 
 // Create product
 router.post(
   "/",
   authorize(ACTIONS.CREATE, RESOURCES.PRODUCTS),
-  (req, res, next) => productController.create(req, res, next)
+  productController.create
 );
 
 // Update product
 router.put(
   "/:id",
   authorize(ACTIONS.UPDATE, RESOURCES.PRODUCTS),
-  (req, res, next) => productController.update(req, res, next)
+  productController.update
 );
 
 // Delete product
 router.delete(
   "/:id",
   authorize(ACTIONS.DELETE, RESOURCES.PRODUCTS),
-  (req, res, next) => productController.delete(req, res, next)
+  productController.delete
 );
 
 export default router;

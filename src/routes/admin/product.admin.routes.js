@@ -1,4 +1,7 @@
+// =========================================================
 // src/routes/admin/product.admin.routes.js
+// =========================================================
+
 import express from "express";
 import productController from "../../modules/product/product.controller.js";
 import { auth } from "../../middlewares/auth.js";

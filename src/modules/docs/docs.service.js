@@ -1,4 +1,7 @@
+// =========================================================
 // src/modules/docs/docs.service.js
+// =========================================================
+
 import prisma from "../../config/prismaClient.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { ERROR_CODES } from "../../constants/errorCodes.js";
@@ -280,6 +283,8 @@ const docsService = {
    * Termasuk dokumentasi:
    *  - Query params relasi: relations, relationsDepth, relationsSummary
    *  - Response wrapper: { rows, total, page, pageSize, pages }
+   *  - Plan limit behaviour (deskriptif, non-path-specific)
+   *  - Ringkasan modul admin (users, roles, plans, subscriptions)
    */
   async buildOpenAPISpec() {
     const types = await prisma.contentType.findMany({
@@ -287,7 +292,10 @@ const docsService = {
     });
 
     const paths = {};
-    const components = { schemas: {} };
+    const components = {
+      schemas: {},
+      responses: {},
+    };
 
     for (const ct of types) {
       const schemaName = `Content_${ct.apiKey}`;
@@ -338,7 +346,12 @@ const docsService = {
               name: "pageSize",
               in: "query",
               required: false,
-              schema: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+              schema: {
+                type: "integer",
+                minimum: 1,
+                maximum: 100,
+                default: 10,
+              },
             },
             {
               name: "sort",
@@ -478,16 +491,325 @@ const docsService = {
       };
     }
 
+    // ------------------------------
+    // Plan Limit Documentation (E3)
+    // ------------------------------
+    components.schemas.PlanLimitInfo = {
+      type: "object",
+      description:
+        "Informasi limit plan aktif untuk sebuah workspace. Nilai null berarti unlimited.",
+      properties: {
+        planId: { type: "string", nullable: true },
+        planName: { type: "string", nullable: true },
+        maxMembers: {
+          type: ["integer", "null"],
+          description: "Maksimal anggota workspace (null = unlimited).",
+        },
+        maxContentTypes: {
+          type: ["integer", "null"],
+          description:
+            "Maksimal jumlah ContentType di workspace (null = unlimited).",
+        },
+        maxEntries: {
+          type: ["integer", "null"],
+          description:
+            "Maksimal jumlah ContentEntry di workspace (null = unlimited).",
+        },
+      },
+      required: ["planId", "planName", "maxMembers", "maxContentTypes", "maxEntries"],
+    };
+
+    components.schemas.PlanLimitExceededError = {
+      type: "object",
+      description:
+        "Response error standar ketika limit plan terlewati (HTTP 403).",
+      properties: {
+        status: { type: "integer", example: 403 },
+        title: { type: "string", example: "Forbidden" },
+        code: {
+          type: "string",
+          enum: [
+            ERROR_CODES.PLAN_LIMIT_MEMBERS,
+            ERROR_CODES.PLAN_LIMIT_CONTENT_TYPES,
+            ERROR_CODES.PLAN_LIMIT_ENTRIES,
+          ],
+          example: ERROR_CODES.PLAN_LIMIT_MEMBERS,
+        },
+        reason: {
+          type: "string",
+          example: ERROR_CODES.PLAN_LIMIT_EXCEEDED,
+        },
+        resource: {
+          type: "string",
+          description:
+            'Resource yang terkena limit, contoh: "MEMBERS", "CONTENT_TYPES", "CONTENT_ENTRIES".',
+          example: "MEMBERS",
+        },
+        action: {
+          type: "string",
+          description:
+            'Action yang diblokir, contoh: "ADD_MEMBER", "ADD_CONTENT_TYPE", "ADD_ENTRY".',
+          example: "ADD_MEMBER",
+        },
+        details: {
+          type: "object",
+          description:
+            "Detail limit & usage ketika error terjadi (limit, current, workspaceId, planId, planName).",
+          properties: {
+            workspaceId: { type: "string", example: "ws_123" },
+            current: {
+              type: "integer",
+              description: "Usage saat ini.",
+              example: 10,
+            },
+            max: {
+              type: "integer",
+              description: "Limit maksimal plan.",
+              example: 10,
+            },
+            planId: { type: "string", nullable: true },
+            planName: { type: "string", nullable: true },
+          },
+        },
+      },
+      required: ["status", "code", "reason"],
+    };
+
+    components.responses.PlanLimitExceeded = {
+      description:
+        "Plan limit terlewati. Backend menolak operasi penambahan member/contentType/entry.",
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/PlanLimitExceededError" },
+        },
+      },
+    };
+
     return {
       openapi: "3.1.0",
       info: {
         title: "BECMS Public Content API",
         version: "1.0.0",
         description:
-          "Public API untuk mengakses published content entries, termasuk dukungan SEO & relasi (relations, relationsDepth, relationsSummary).",
+          "Public API untuk mengakses published content entries, termasuk dukungan SEO & relasi (relations, relationsDepth, relationsSummary).\n\n" +
+          "Plan & Subscription Behaviour:\n" +
+          "- Setiap workspace memiliki plan dengan field maxMembers, maxContentTypes, maxEntries.\n" +
+          "- Backend akan melakukan pengecekan limit saat:\n" +
+          "  • Menambah member baru ke workspace.\n" +
+          "  • Membuat ContentType baru.\n" +
+          "  • Membuat ContentEntry baru.\n" +
+          "- Jika limit terlewati, server mengembalikan HTTP 403 dengan salah satu code:\n" +
+          `  • ${ERROR_CODES.PLAN_LIMIT_MEMBERS}\n` +
+          `  • ${ERROR_CODES.PLAN_LIMIT_CONTENT_TYPES}\n` +
+          `  • ${ERROR_CODES.PLAN_LIMIT_ENTRIES}\n` +
+          "- Struktur body error mengikuti schema PlanLimitExceededError di components.schemas.\n\n" +
+          "Admin Modules (Ringkasan):\n" +
+          "- Modul User, Roles, Plans, dan Subscriptions tersedia di /api/admin/* dan dilindungi oleh RBAC (ACTIONS.*, RESOURCES.*).\n" +
+          "- Response admin API menggunakan wrapper JSON: { success, data, meta?, error? }.\n" +
+          "- Semua error standar dikembalikan sebagai ApiError (status, code, reason, resource, details).",
       },
       paths,
       components,
+      // Extension khusus untuk jelaskan behaviour plan limit secara ringkas
+      "x-planLimit": {
+        summary:
+          "Pengecekan limit plan dilakukan di backend sebelum operasi penambahan member, ContentType, dan ContentEntry.",
+        limitsSchemaRef: "#/components/schemas/PlanLimitInfo",
+        errorResponseRef: "#/components/responses/PlanLimitExceeded",
+        errors: [
+          {
+            when: "Menambah member baru ke workspace",
+            adminEndpoint: "POST /api/admin/workspace-members",
+            responseRef: "#/components/responses/PlanLimitExceeded",
+            codes: [ERROR_CODES.PLAN_LIMIT_MEMBERS],
+          },
+          {
+            when: "Membuat ContentType baru",
+            adminEndpoint: "POST /api/admin/content/types",
+            responseRef: "#/components/responses/PlanLimitExceeded",
+            codes: [ERROR_CODES.PLAN_LIMIT_CONTENT_TYPES],
+          },
+          {
+            when: "Membuat ContentEntry baru",
+            adminEndpoint: "POST /api/admin/content/entries",
+            responseRef: "#/components/responses/PlanLimitExceeded",
+            codes: [ERROR_CODES.PLAN_LIMIT_ENTRIES],
+          },
+        ],
+      },
+      // Ringkasan modul admin (non-path-specific, deskriptif)
+      "x-adminModules": {
+        users: {
+          summary: "Modul manajemen user dalam workspace.",
+          basePath: "/api/admin/users",
+          permissions: {
+            list: {
+              action: "READ",
+              resource: "USERS",
+              rbac: "authorize(ACTIONS.READ, RESOURCES.USERS)",
+            },
+            create: {
+              action: "CREATE",
+              resource: "USERS",
+              rbac: "authorize(ACTIONS.CREATE, RESOURCES.USERS)",
+            },
+            update: {
+              action: "UPDATE",
+              resource: "USERS",
+              rbac: "authorize(ACTIONS.UPDATE, RESOURCES.USERS)",
+            },
+          },
+          endpoints: [
+            {
+              method: "GET",
+              path: "/api/admin/users",
+              description: "List user dalam sebuah workspace.",
+              responseWrapper: "{ success: true, data: { rows, total, page, pageSize } }",
+            },
+            {
+              method: "POST",
+              path: "/api/admin/users",
+              description: "Create user baru dalam workspace.",
+              responseWrapper: "{ success: true, data: { ...user } }",
+            },
+            {
+              method: "PUT",
+              path: "/api/admin/users/:id",
+              description: "Update data user.",
+              responseWrapper: "{ success: true, data: { ...user } }",
+            },
+          ],
+        },
+        roles: {
+          summary: "Modul manajemen role & permission.",
+          basePath: "/api/admin/roles",
+          permissions: {
+            list: {
+              action: "READ",
+              resource: "ROLES",
+              rbac: "authorize(ACTIONS.READ, RESOURCES.ROLES)",
+            },
+            create: {
+              action: "CREATE",
+              resource: "ROLES",
+              rbac: "authorize(ACTIONS.CREATE, RESOURCES.ROLES)",
+            },
+            update: {
+              action: "UPDATE",
+              resource: "ROLES",
+              rbac: "authorize(ACTIONS.UPDATE, RESOURCES.ROLES)",
+            },
+          },
+          seededFrom: "rbac.constants.js + prisma/seed.js (default roles & mapping permission).",
+          endpoints: [
+            {
+              method: "GET",
+              path: "/api/admin/roles",
+              description:
+                "List roles dalam workspace, termasuk informasi permission per role.",
+              responseWrapper: "{ success: true, data: [ { ...role } ] }",
+            },
+            {
+              method: "POST",
+              path: "/api/admin/roles",
+              description: "Create role baru / custom.",
+              responseWrapper: "{ success: true, data: { ...role } }",
+            },
+          ],
+        },
+        plans: {
+          summary: "Modul definisi plan (limit & fitur).",
+          basePath: "/api/admin/plans",
+          permissions: {
+            list: {
+              action: "READ",
+              resource: "PLANS",
+              rbac: "authorize(ACTIONS.READ, RESOURCES.PLANS)",
+            },
+          },
+          planLimitSchemaRef: "#/components/schemas/PlanLimitInfo",
+          endpoints: [
+            {
+              method: "GET",
+              path: "/api/admin/plans",
+              description:
+                "List plan yang tersedia (name, price?, maxMembers, maxContentTypes, maxEntries).",
+              responseWrapper:
+                "{ success: true, data: [ { id, name, maxMembers, maxContentTypes, maxEntries } ] }",
+            },
+          ],
+        },
+        subscriptions: {
+          summary: "Modul subscription & billing workspace.",
+          basePath: "/api/admin/subscriptions",
+          permissions: {
+            status: {
+              action: "READ",
+              resource: "SUBSCRIPTIONS",
+              rbac: "authorize(ACTIONS.READ, RESOURCES.SUBSCRIPTIONS)",
+            },
+          },
+          endpoints: [
+            {
+              method: "GET",
+              path: "/api/admin/subscriptions/status",
+              description:
+                "Ambil status plan + subscription + usage untuk satu workspace. Dipakai FE untuk halaman billing / upgrade.",
+              responseWrapper:
+                "{ success: true, data: { workspace, plan, subscription, usage } }",
+              usageStructure: {
+                workspace: "{ id, name }",
+                plan: "{ id, name, maxMembers, maxContentTypes, maxEntries } | null",
+                subscription:
+                  "{ id, status, startedAt, cancelledAt, expiredAt, planId } | null",
+                usage: {
+                  members: "{ current, max }",
+                  contentTypes: "{ current, max }",
+                  entries: "{ current, max }",
+                },
+              },
+              errors: [
+                {
+                  code: ERROR_CODES.WORKSPACE_REQUIRED,
+                  reason: "SUBSCRIPTION_WORKSPACE_ID_REQUIRED",
+                },
+                {
+                  code: ERROR_CODES.WORKSPACE_NOT_FOUND,
+                  reason: "SUBSCRIPTION_WORKSPACE_NOT_FOUND",
+                },
+                {
+                  code: ERROR_CODES.SUBSCRIPTION_NOT_FOUND,
+                  reason: "SUBSCRIPTION_ACTIVE_NOT_FOUND",
+                },
+              ],
+            },
+            {
+              method: "GET",
+              path: "/api/admin/subscriptions/history",
+              description: "List riwayat subscription untuk workspace.",
+              responseWrapper: "{ success: true, data: [ { ...subscription } ] }",
+            },
+            {
+              method: "POST",
+              path: "/api/admin/subscriptions/webhook",
+              description:
+                "Webhook handler billing (contoh: Xendit). Mengubah status subscription berdasarkan status invoice/event.",
+              responseWrapper:
+                "{ success: true, data: { handled, action?, workspaceId?, planId?, subscriptionId?, reason? } }",
+              errors: [
+                {
+                  code: ERROR_CODES.BILLING_WEBHOOK_PAYLOAD_INVALID,
+                  reason: "SUBSCRIPTION_WEBHOOK_PAYLOAD_INVALID",
+                },
+                {
+                  code: ERROR_CODES.PLAN_NOT_FOUND,
+                  reason: "SUBSCRIPTION_PLAN_NOT_FOUND",
+                },
+              ],
+            },
+          ],
+        },
+      },
     };
   },
 };

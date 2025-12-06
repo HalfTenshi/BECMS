@@ -5,6 +5,8 @@ import { workspaceContext } from "../../middlewares/workspace.js";
 import contentEntryController from "../../modules/content/contentEntry.controller.js";
 import { expandRelations } from "../../modules/content/relations.expander.js";
 import { getSeoLengthHints } from "../../utils/seoUtils.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 const router = express.Router();
 
@@ -17,9 +19,11 @@ async function resolveContentTypeOrThrow(workspaceId, apiKey) {
     select: { id: true, apiKey: true, name: true, seoEnabled: true },
   });
   if (!ct) {
-    const err = new Error("Content type not found");
-    err.status = 404;
-    throw err;
+    throw ApiError.notFound("Content type not found", {
+      code: ERROR_CODES.CONTENT_TYPE_NOT_FOUND,
+      resource: "CONTENT_TYPES",
+      details: { workspaceId, apiKey },
+    });
   }
   return ct;
 }
@@ -32,12 +36,16 @@ async function resolveContentTypeOrThrow(workspaceId, apiKey) {
  * - hanya isPublished = true dan slug != null
  * - pola URL: /content/:contentTypeApiKey/:slug  (sesuaikan dgn FE kamu)
  */
-router.get("/sitemap.xml", workspaceContext, async (req, res) => {
+router.get("/sitemap.xml", workspaceContext, async (req, res, next) => {
   try {
     const workspaceId =
       req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
+
     if (!workspaceId) {
-      return res.status(400).json({ message: "workspaceId required" });
+      throw ApiError.badRequest("workspaceId required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        resource: "PUBLIC_CONTENT",
+      });
     }
 
     const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -79,10 +87,7 @@ ${urlsXml}
     res.header("Content-Type", "application/xml; charset=utf-8");
     return res.send(xml);
   } catch (err) {
-    console.error(err);
-    res
-      .status(400)
-      .json({ message: err.message || "Failed to generate sitemap" });
+    return next(err);
   }
 });
 
@@ -98,7 +103,7 @@ ${urlsXml}
 router.get(
   "/:contentType/search",
   workspaceContext,
-  contentEntryController.searchForRelation
+  (req, res, next) => contentEntryController.searchForRelation(req, res, next),
 );
 
 /**
@@ -118,12 +123,15 @@ router.get(
  *   }
  * }
  */
-router.get("/:contentType/seo-config", workspaceContext, async (req, res) => {
+router.get("/:contentType/seo-config", workspaceContext, async (req, res, next) => {
   try {
     const workspaceId =
       req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
     if (!workspaceId) {
-      return res.status(400).json({ message: "workspaceId required" });
+      throw ApiError.badRequest("workspaceId required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        resource: "PUBLIC_CONTENT",
+      });
     }
 
     const { contentType } = req.params;
@@ -161,9 +169,7 @@ router.get("/:contentType/seo-config", workspaceContext, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err);
-    const status = err.status || 400;
-    return res.status(status).json({ message: err.message || "Server error" });
+    return next(err);
   }
 });
 
@@ -195,12 +201,16 @@ router.get("/:contentType/seo-config", workspaceContext, async (req, res) => {
  *      * basic -> target relasi dikembalikan ringkas (mis. id, slug, seoTitle, isPublished)
  *      * full  -> boleh include field tambahan (mis. contentTypeId, publishedAt)
  */
-router.get("/:contentType", workspaceContext, async (req, res) => {
+router.get("/:contentType", workspaceContext, async (req, res, next) => {
   try {
     const workspaceId =
       req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
-    if (!workspaceId)
-      return res.status(400).json({ message: "workspaceId required" });
+    if (!workspaceId) {
+      throw ApiError.badRequest("workspaceId required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        resource: "PUBLIC_CONTENT",
+      });
+    }
 
     const { contentType } = req.params;
     const {
@@ -222,7 +232,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       String(include)
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
+        .filter(Boolean),
     );
     const wantValues = includeSet.has("values");
     const wantRelations = includeSet.has("relations");
@@ -232,7 +242,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       String(relations)
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
+        .filter(Boolean),
     );
 
     // Clamp depth 1..5 (tidak melempar error; hanya normalisasi)
@@ -343,7 +353,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       }
     }
 
-    res.json({
+    return res.json({
       rows: items,
       total,
       page: pageNum,
@@ -351,8 +361,7 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
       pages: Math.max(1, Math.ceil(total / take)),
     });
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ message: err.message || "Server error" });
+    return next(err);
   }
 });
 
@@ -371,12 +380,16 @@ router.get("/:contentType", workspaceContext, async (req, res) => {
  *  - relationsDepth di-normalisasi ke rentang 1..5 (tanpa error 400)
  *  - relationsSummary menentukan bentuk payload target relasi
  */
-router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
+router.get("/:contentType/:slug", workspaceContext, async (req, res, next) => {
   try {
     const workspaceId =
       req.workspaceId || req.workspace?.id || req.headers["x-workspace-id"];
-    if (!workspaceId)
-      return res.status(400).json({ message: "workspaceId required" });
+    if (!workspaceId) {
+      throw ApiError.badRequest("workspaceId required", {
+        code: ERROR_CODES.WORKSPACE_REQUIRED,
+        resource: "PUBLIC_CONTENT",
+      });
+    }
 
     const { contentType, slug } = req.params;
     const {
@@ -393,7 +406,7 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
       String(include)
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
+        .filter(Boolean),
     );
     const wantValues = includeSet.has("values");
     const wantRelations = includeSet.has("relations");
@@ -402,7 +415,7 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
       String(relations)
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean)
+        .filter(Boolean),
     );
 
     const depthRaw = Number(relationsDepth || 1);
@@ -455,10 +468,13 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
 
     const item = await prisma.contentEntry.findFirst(detailQuery);
 
-    if (!item)
-      return res
-        .status(404)
-        .json({ message: "Entry not found or not published" });
+    if (!item) {
+      throw ApiError.notFound("Entry not found or not published", {
+        code: ERROR_CODES.CONTENT_ENTRY_NOT_FOUND,
+        resource: "CONTENT_ENTRIES",
+        details: { workspaceId, contentTypeId, slug },
+      });
+    }
 
     // Extra safety jika SEO dimatikan pada model ini
     if (ct.seoEnabled === false) {
@@ -480,10 +496,9 @@ router.get("/:contentType/:slug", workspaceContext, async (req, res) => {
       item._relations = relMap.get(item.id) || {};
     }
 
-    res.json(item);
+    return res.json(item);
   } catch (err) {
-    console.error(err);
-    res.status(400).json({ message: err.message || "Server error" });
+    return next(err);
   }
 });
 

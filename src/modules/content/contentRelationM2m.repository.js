@@ -1,5 +1,7 @@
 // src/modules/content/contentRelationM2m.repository.js
 import prisma from "../../config/prismaClient.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ERROR_CODES } from "../../constants/errorCodes.js";
 
 class ContentRelationM2mRepository {
   // ---- Position helpers -----------------------------------------------------
@@ -103,14 +105,16 @@ class ContentRelationM2mRepository {
 
   // List "toEntryId" milik (relationFieldId, fromEntryId) dengan urutan position ASC
   async listByFrom({ relationFieldId, fromEntryId, page = 1, pageSize = 20 }) {
-    const skip = (page - 1) * pageSize;
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.max(1, Math.min(Number(pageSize) || 20, 100));
+    const skip = (safePage - 1) * safePageSize;
 
     const [rows, total] = await prisma.$transaction([
       prisma.contentRelationM2M.findMany({
         where: { relationFieldId, fromEntryId },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
         skip,
-        take: pageSize,
+        take: safePageSize,
         select: { id: true, toEntryId: true, position: true },
       }),
       prisma.contentRelationM2M.count({
@@ -118,7 +122,7 @@ class ContentRelationM2mRepository {
       }),
     ]);
 
-    return { rows, total, page, pageSize };
+    return { rows, total, page: safePage, pageSize: safePageSize };
   }
 
   // Alias kompatibel dengan versi lama (tetap ada, tapi pakai order posisi)
@@ -128,14 +132,16 @@ class ContentRelationM2mRepository {
 
   // Reverse lookup: cari semua "fromEntryId" yang terkait ke satu relatedEntryId
   async findFromByRelated({ relationFieldId, relatedEntryId, page = 1, pageSize = 20 }) {
-    const skip = (page - 1) * pageSize;
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.max(1, Math.min(Number(pageSize) || 20, 100));
+    const skip = (safePage - 1) * safePageSize;
 
     const [rows, total] = await prisma.$transaction([
       prisma.contentRelationM2M.findMany({
         where: { relationFieldId, toEntryId: relatedEntryId },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
         skip,
-        take: pageSize,
+        take: safePageSize,
         select: { fromEntryId: true, position: true },
       }),
       prisma.contentRelationM2M.count({
@@ -143,7 +149,7 @@ class ContentRelationM2mRepository {
       }),
     ]);
 
-    return { rows, total, page, pageSize };
+    return { rows, total, page: safePage, pageSize: safePageSize };
   }
 
   // ---- Reorder --------------------------------------------------------------
@@ -154,7 +160,15 @@ class ContentRelationM2mRepository {
    */
   async setOrder({ relationFieldId, fromEntryId, orderedToEntryIds = [] }) {
     if (!Array.isArray(orderedToEntryIds)) {
-      throw new Error("orderedToEntryIds must be an array");
+      throw ApiError.badRequest("orderedToEntryIds must be an array", {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        resource: "CONTENT_RELATIONS",
+        details: {
+          relationFieldId,
+          fromEntryId,
+          receivedType: typeof orderedToEntryIds,
+        },
+      });
     }
 
     // Ambil seluruh row untuk kombinasi ini (tanpa batasan pagination)

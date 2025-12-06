@@ -1,4 +1,7 @@
+// =========================================================
 // src/routes/admin/brand.admin.routes.js
+// =========================================================
+
 import express from "express";
 import brandController from "../../modules/brand/brand.controller.js";
 import { auth } from "../../middlewares/auth.js";
